@@ -1,0 +1,28 @@
+# config.yaml
+# Contains configuration for SAM (Simple AppStakes Manager)
+# Copy this file to config.yaml and fill in your values:
+#   cp config.yaml.example config.yaml
+#
+# --NOTE-- All keys must exist in the keyring and be accessible without a password
+
+config:
+  keyring-backend: test
+  # Stake threshold configuration (denominated in uPOKT)
+  # warning_threshold: Stakes above this value show green status
+  # danger_threshold: Stakes below this value show red status and red text
+  # Stakes between thresholds show yellow status
+  thresholds:
+    warning_threshold: 2000000000  # 2000 POKT in uPOKT
+    danger_threshold: 1000000000   # 1000 POKT in uPOKT
+
+  networks:
+    pocket:
+      # Public mainnet endpoints — replace with your own if you have dedicated infrastructure
+      rpc_endpoint: https://sauron-rpc.infra.pocket.network/
+      api_endpoint: https://sauron-api.infra.pocket.network/
+      gateways:
+        - pokt1your_gateway_address_here
+      bank: pokt1your_bank_address_here
+      applications:
+        - pokt1your_app_address_1
+        - pokt1your_app_address_2
