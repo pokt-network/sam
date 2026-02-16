@@ -4,6 +4,16 @@ All notable changes to SAM (Simple AppStakes Manager) are documented in this fil
 
 ## [Unreleased]
 
+### Added
+
+- **Docker support** — Multi-stage Dockerfile with pocketd bundled, docker-compose.yml for local dev
+- **Helm chart** — Full Kubernetes deployment chart (`charts/sam/`) with ConfigMap, PVC, ingress, health probes
+- **GitHub Actions CI** — Runs vet, test, build, Docker build, and Helm lint on push/PR
+- **GitHub Actions release** — Builds cross-platform binaries, Docker image, and Helm chart on `v*` tags
+- **`CONFIG_FILE` env var** — Override config.yaml path (default: `config.yaml`), enables mounted configs in containers
+- **`DATA_DIR` env var** — Override directory for `autotopup.json` (default: `.`), enables persistent volumes
+- **Version injection** — Binary version set via `-ldflags` at build time, logged at startup
+
 ### Changed
 
 - **Typography** — Replaced Inter with Sora (headings) and DM Sans (body) for a more distinctive fintech aesthetic

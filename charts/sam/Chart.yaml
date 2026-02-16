@@ -1,0 +1,15 @@
+apiVersion: v2
+name: sam
+description: SAM (Simple AppStakes Manager) — Pocket Network application stake manager
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - pocket-network
+  - staking
+  - pokt
+home: https://github.com/pokt-network/sam
+sources:
+  - https://github.com/pokt-network/sam
+maintainers:
+  - name: pokt-network

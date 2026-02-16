@@ -1,9 +1,12 @@
 # Binary
-sam
+/sam
 tmp/
 
 # Configuration (contains real addresses and endpoints)
 config.yaml
+
+# Runtime data
+autotopup.json
 
 # IDE
 .idea/

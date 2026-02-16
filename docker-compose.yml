@@ -1,0 +1,22 @@
+services:
+  sam:
+    build: .
+    ports:
+      - "9999:9999"
+    volumes:
+      - ./config.yaml:/app/config.yaml
+      - sam-data:/app/data
+    environment:
+      - PORT=9999
+      - CONFIG_FILE=/app/config.yaml
+      - DATA_DIR=/app/data
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9999/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  sam-data:

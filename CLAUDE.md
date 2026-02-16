@@ -11,16 +11,27 @@ SAM (Simple AppStakes Manager) is a Go web application for managing Pocket Netwo
 ## Common Commands
 
 ```bash
-make build          # Build binary → ./sam
-make run            # Build and run (checks for pocketd)
-make dev            # Hot reload via air (auto-installs if missing)
-make test           # go test -v ./...
-make clean          # Remove sam binary and tmp/
-make setup          # Install deps + initialize config.yaml
-make check-pocketd  # Verify pocketd CLI is in PATH
+make build              # Build binary → ./sam (VERSION=dev by default)
+make build VERSION=1.0  # Build with version injected via ldflags
+make run                # Build and run (checks for pocketd)
+make dev                # Hot reload via air (auto-installs if missing)
+make test               # go test -v ./...
+make clean              # Remove sam binary and tmp/
+make setup              # Install deps + initialize config.yaml
+make check-pocketd      # Verify pocketd CLI is in PATH
+docker compose up       # Run via Docker (builds image, mounts config)
+helm lint charts/sam    # Lint Helm chart
 ```
 
-Run with custom port: `PORT=8080 ./sam` (default: 9999)
+### Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `9999` | HTTP server port |
+| `CONFIG_FILE` | `config.yaml` | Path to config file |
+| `DATA_DIR` | `.` | Directory for `autotopup.json` |
+
+Run with custom port: `PORT=8080 ./sam`
 
 ## Architecture
 

@@ -28,34 +28,61 @@ A lightweight web application for monitoring and managing [Pocket Network](https
 
 ## Quick Start
 
-### Prerequisites
-
-- **Go 1.25+**
-- **pocketd** CLI in your `PATH` (required only for write operations)
-
-Install pocketd:
+### Option 1: Docker (recommended)
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/pokt-network/poktroll/main/tools/scripts/pocketd-install.sh | bash
-```
-
-### Setup
-
-```bash
-# Clone and install dependencies
 git clone https://github.com/pokt-network/sam.git
 cd sam
-make install
 
 # Create your configuration
 cp config.yaml.example config.yaml
 # Edit config.yaml with your network endpoints and addresses
 
-# Build and run
+docker compose up
+```
+
+Open [http://localhost:9999](http://localhost:9999). The Docker image bundles `pocketd`, so write operations work out of the box.
+
+### Option 2: From source
+
+**Prerequisites:**
+- **Go 1.25+**
+- **pocketd** CLI in your `PATH` (required only for write operations)
+
+```bash
+git clone https://github.com/pokt-network/sam.git
+cd sam
+make install
+
+cp config.yaml.example config.yaml
+# Edit config.yaml with your network endpoints and addresses
+
 make run
 ```
 
-Open [http://localhost:9999](http://localhost:9999) in your browser.
+Open [http://localhost:9999](http://localhost:9999).
+
+### Option 3: Pre-built binary
+
+Download the latest release from [GitHub Releases](https://github.com/pokt-network/sam/releases). Each archive includes the `sam` binary and the `web/` directory.
+
+```bash
+tar -xzf sam-v*.tar.gz
+cd sam-v*
+cp config.yaml.example config.yaml
+# Edit config.yaml
+./sam
+```
+
+### Option 4: Helm (Kubernetes)
+
+```bash
+helm install sam oci://ghcr.io/pokt-network/charts/sam \
+  --set config.networks.pocket.bank=pokt1your_bank_address \
+  --set config.networks.pocket.applications[0]=pokt1your_app
+```
+
+See [Helm chart values](#helm-chart) for full configuration options.
 
 ## Configuration
 
@@ -98,13 +125,14 @@ All amounts are in **uPOKT** (1 POKT = 1,000,000 uPOKT).
 ### Make Commands
 
 ```bash
-make build          # Build binary → ./sam
-make run            # Build and run (checks for pocketd)
-make dev            # Hot reload via air (auto-installs if missing)
-make test           # Run tests
-make clean          # Remove build artifacts
-make setup          # Install deps + initialize config.yaml
-make check-pocketd  # Verify pocketd CLI is in PATH
+make build              # Build binary → ./sam
+make build VERSION=1.0  # Build with version injected
+make run                # Build and run (checks for pocketd)
+make dev                # Hot reload via air (auto-installs if missing)
+make test               # Run tests
+make clean              # Remove build artifacts
+make setup              # Install deps + initialize config.yaml
+make check-pocketd      # Verify pocketd CLI is in PATH
 ```
 
 ### Environment Variables
@@ -112,9 +140,13 @@ make check-pocketd  # Verify pocketd CLI is in PATH
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `9999` | HTTP server port |
+| `CONFIG_FILE` | `config.yaml` | Path to the configuration file |
+| `DATA_DIR` | `.` | Directory for runtime data (`autotopup.json`) |
 
 ```bash
 PORT=8080 ./sam
+# Or with custom paths (useful in containers):
+CONFIG_FILE=/etc/sam/config.yaml DATA_DIR=/var/lib/sam ./sam
 ```
 
 ### Keyboard Shortcuts
@@ -193,6 +225,88 @@ Add `?refresh=true` to any GET endpoint to bypass the 1-minute cache.
 `trigger_threshold` and `target_amount` are in POKT. The backend converts to uPOKT. `target_amount` must be greater than `trigger_threshold`.
 
 All amounts in request bodies are in POKT (not uPOKT).
+
+## Docker
+
+### docker compose (local development)
+
+```bash
+# Start SAM with persistent data volume
+docker compose up
+
+# Rebuild after code changes
+docker compose up --build
+
+# Stop and remove containers (data volume persists)
+docker compose down
+```
+
+The `docker-compose.yml` mounts your local `config.yaml` into the container and uses a named volume (`sam-data`) for `autotopup.json` persistence.
+
+### Custom Docker build
+
+```bash
+# Build with specific pocketd version
+docker build --build-arg POCKETD_VERSION=v0.1.31 --build-arg VERSION=1.0.0 -t sam .
+
+# Run with custom config location
+docker run -p 9999:9999 \
+  -v $(pwd)/config.yaml:/app/config.yaml \
+  -v sam-data:/app/data \
+  sam
+```
+
+## Helm Chart
+
+The Helm chart deploys SAM to Kubernetes with a ConfigMap for configuration, a PersistentVolumeClaim for runtime data, and health probes.
+
+### Install
+
+```bash
+# From OCI registry
+helm install sam oci://ghcr.io/pokt-network/charts/sam
+
+# From local chart
+helm install sam charts/sam -f my-values.yaml
+```
+
+### Key values
+
+| Value | Default | Description |
+|-------|---------|-------------|
+| `image.repository` | `ghcr.io/pokt-network/sam` | Container image |
+| `image.tag` | Chart `appVersion` | Image tag |
+| `service.type` | `ClusterIP` | Kubernetes service type |
+| `service.port` | `9999` | Service port |
+| `ingress.enabled` | `false` | Enable ingress resource |
+| `persistence.enabled` | `true` | Enable PVC for runtime data |
+| `persistence.size` | `100Mi` | PVC storage size |
+| `resources.requests.memory` | `64Mi` | Memory request |
+| `resources.limits.memory` | `128Mi` | Memory limit |
+| `config` | *(see values.yaml)* | SAM configuration (rendered as `config.yaml`) |
+
+The chart uses an init container to copy the ConfigMap-seeded `config.yaml` to the PVC, so SAM can write back to it (e.g., when staking new apps).
+
+### Lint and template
+
+```bash
+helm lint charts/sam
+helm template sam charts/sam
+```
+
+## CI/CD
+
+GitHub Actions workflows are included:
+
+- **CI** (`.github/workflows/ci.yml`) — Runs on push to main/master and PRs: `go vet`, `go test`, `go build`, Docker build (no push), `helm lint`
+- **Release** (`.github/workflows/release.yml`) — Triggered by `v*` tags: builds cross-platform binaries (linux/darwin amd64+arm64, windows/amd64), publishes Docker image to GHCR, packages and pushes Helm chart to GHCR OCI registry, creates a GitHub Release with checksums
+
+To cut a release:
+
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
 
 ## Architecture
 

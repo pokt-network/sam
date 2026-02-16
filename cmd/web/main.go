@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"syscall"
 	"time"
@@ -22,10 +23,22 @@ import (
 	"github.com/pokt-network/sam/internal/pocket"
 )
 
+var version = "dev"
+
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	logger.Info("starting SAM", "version", version)
 
-	configPath := "config.yaml"
+	configPath := os.Getenv("CONFIG_FILE")
+	if configPath == "" {
+		configPath = "config.yaml"
+	}
+
+	dataDir := os.Getenv("DATA_DIR")
+	if dataDir == "" {
+		dataDir = "."
+	}
+
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		logger.Error("failed to load config", "error", err)
@@ -50,7 +63,7 @@ func main() {
 	appCache := cache.New[[]models.Application](1 * time.Minute)
 	bankCache := cache.New[models.BankAccount](1 * time.Minute)
 
-	topUpStore, err := autotopup.NewStore("autotopup.json")
+	topUpStore, err := autotopup.NewStore(filepath.Join(dataDir, "autotopup.json"))
 	if err != nil {
 		logger.Error("failed to initialize auto-top-up store", "error", err)
 		os.Exit(1)
