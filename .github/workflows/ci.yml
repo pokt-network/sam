@@ -19,6 +19,15 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Check version consistency
+        run: |
+          FILE_VERSION=$(cat VERSION | tr -d '[:space:]')
+          CHART_VERSION=$(grep '^appVersion:' charts/sam/Chart.yaml | sed 's/appVersion: *"\?\([^"]*\)"\?/\1/')
+          if [ "$FILE_VERSION" != "$CHART_VERSION" ]; then
+            echo "::error::VERSION file ($FILE_VERSION) does not match Chart.yaml appVersion ($CHART_VERSION)"
+            exit 1
+          fi
+
       - name: Vet
         run: go vet ./...
 

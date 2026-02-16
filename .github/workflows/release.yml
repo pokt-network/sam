@@ -10,7 +10,27 @@ permissions:
   packages: write
 
 jobs:
+  validate-version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate tag matches VERSION file
+        id: version
+        run: |
+          FILE_VERSION=$(cat VERSION | tr -d '[:space:]')
+          TAG_VERSION=${GITHUB_REF_NAME#v}
+          if [ "$FILE_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) does not match VERSION file ($FILE_VERSION)"
+            echo "Update the VERSION file to $TAG_VERSION before tagging."
+            exit 1
+          fi
+          echo "version=${FILE_VERSION}" >> "$GITHUB_OUTPUT"
+
   test:
+    needs: validate-version
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -50,8 +70,8 @@ jobs:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: "0"
+          VERSION: ${{ needs.validate-version.outputs.version }}
         run: |
-          VERSION=${GITHUB_REF_NAME#v}
           EXT=""
           if [ "${{ matrix.goos }}" = "windows" ]; then EXT=".exe"; fi
           go build -ldflags="-s -w -X main.version=${VERSION}" \
@@ -105,8 +125,10 @@ jobs:
             dist/checksums.txt
 
   docker:
-    needs: test
+    needs: [validate-version, test]
     runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.validate-version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -123,26 +145,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract version
-        id: meta
-        run: |
-          VERSION=${GITHUB_REF_NAME#v}
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
-
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
           push: true
-          build-args: VERSION=${{ steps.meta.outputs.version }}
+          build-args: VERSION=${{ env.VERSION }}
           tags: |
-            ghcr.io/pokt-network/sam:${{ steps.meta.outputs.version }}
+            ghcr.io/pokt-network/sam:${{ env.VERSION }}
             ghcr.io/pokt-network/sam:latest
 
   helm:
-    needs: test
+    needs: [validate-version, test]
     runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.validate-version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -153,11 +171,7 @@ jobs:
         run: echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io --username ${{ github.actor }} --password-stdin
 
       - name: Package chart
-        run: |
-          VERSION=${GITHUB_REF_NAME#v}
-          helm package charts/sam --version "${VERSION}" --app-version "${VERSION}"
+        run: helm package charts/sam --version "${VERSION}" --app-version "${VERSION}"
 
       - name: Push chart to GHCR
-        run: |
-          VERSION=${GITHUB_REF_NAME#v}
-          helm push sam-${VERSION}.tgz oci://ghcr.io/pokt-network/charts
+        run: helm push sam-${VERSION}.tgz oci://ghcr.io/pokt-network/charts

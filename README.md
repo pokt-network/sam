@@ -125,8 +125,8 @@ All amounts are in **uPOKT** (1 POKT = 1,000,000 uPOKT).
 ### Make Commands
 
 ```bash
-make build              # Build binary → ./sam
-make build VERSION=1.0  # Build with version injected
+make build              # Build binary → ./sam (version from VERSION file)
+make build VERSION=1.0  # Build with explicit version override
 make run                # Build and run (checks for pocketd)
 make dev                # Hot reload via air (auto-installs if missing)
 make test               # Run tests
@@ -301,12 +301,23 @@ GitHub Actions workflows are included:
 - **CI** (`.github/workflows/ci.yml`) — Runs on push to main/master and PRs: `go vet`, `go test`, `go build`, Docker build (no push), `helm lint`
 - **Release** (`.github/workflows/release.yml`) — Triggered by `v*` tags: builds cross-platform binaries (linux/darwin amd64+arm64, windows/amd64), publishes Docker image to GHCR, packages and pushes Helm chart to GHCR OCI registry, creates a GitHub Release with checksums
 
-To cut a release:
+### Versioning
+
+The `VERSION` file at the repo root is the single source of truth. All build artifacts (Go binary, Docker image, Helm chart) derive their version from it.
+
+When bumping the version:
+
+1. Update `VERSION`
+2. Update `charts/sam/Chart.yaml` (`version` and `appVersion`)
+3. Commit and push
+4. Tag and release:
 
 ```bash
 git tag v1.0.0
 git push origin v1.0.0
 ```
+
+CI checks that `VERSION` and `Chart.yaml` stay in sync. The release workflow validates the git tag matches the `VERSION` file.
 
 ## Architecture
 

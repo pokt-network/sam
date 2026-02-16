@@ -6,8 +6,9 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 
-ARG VERSION=dev
-RUN CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${VERSION}" -o /sam ./cmd/web/
+ARG VERSION
+RUN VERSION=${VERSION:-$(cat VERSION)} && \
+    CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=${VERSION}" -o /sam ./cmd/web/
 
 # Stage 2: Download pocketd binary
 FROM alpine:3.21 AS pocketd-downloader

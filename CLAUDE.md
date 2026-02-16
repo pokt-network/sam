@@ -11,8 +11,8 @@ SAM (Simple AppStakes Manager) is a Go web application for managing Pocket Netwo
 ## Common Commands
 
 ```bash
-make build              # Build binary → ./sam (VERSION=dev by default)
-make build VERSION=1.0  # Build with version injected via ldflags
+make build              # Build binary → ./sam (version from VERSION file)
+make build VERSION=1.0  # Build with explicit version override
 make run                # Build and run (checks for pocketd)
 make dev                # Hot reload via air (auto-installs if missing)
 make test               # go test -v ./...
@@ -77,6 +77,12 @@ Query param `?refresh=true` bypasses cache on read endpoints.
 - **Runtime:** `pocketd` binary in PATH (required only for write operations: stake/upstake/fund)
 - **Go deps:** gorilla/mux, rs/cors, gopkg.in/yaml.v3
 - **Frontend:** React 18, TailwindCSS, Babel standalone (all via CDN)
+
+## Versioning
+
+The `VERSION` file at the repo root is the single source of truth. It must stay in sync with `charts/sam/Chart.yaml` (`version` and `appVersion` fields). CI checks this on every push. The release workflow validates that the git tag matches the VERSION file.
+
+To bump the version: update `VERSION`, update `Chart.yaml`, commit, then tag.
 
 ## Changelog
 

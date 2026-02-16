@@ -23,7 +23,7 @@ install:
 	@echo "Dependencies installed successfully!"
 
 # Build the binary
-VERSION ?= dev
+VERSION ?= $(shell cat VERSION 2>/dev/null || echo dev)
 build:
 	@echo "Building SAM..."
 	go build -ldflags="-s -w -X main.version=$(VERSION)" -o sam ./cmd/web/

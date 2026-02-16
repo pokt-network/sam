@@ -13,6 +13,7 @@ All notable changes to SAM (Simple AppStakes Manager) are documented in this fil
 - **`CONFIG_FILE` env var** — Override config.yaml path (default: `config.yaml`), enables mounted configs in containers
 - **`DATA_DIR` env var** — Override directory for `autotopup.json` (default: `.`), enables persistent volumes
 - **Version injection** — Binary version set via `-ldflags` at build time, logged at startup
+- **`VERSION` file** — Single source of truth for project version; CI validates consistency with Chart.yaml and git tags
 
 ### Changed
 
