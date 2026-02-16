@@ -47,7 +47,10 @@ Open [http://localhost:9999](http://localhost:9999). The Docker image bundles `p
 
 **Prerequisites:**
 - **Go 1.25+**
-- **pocketd** CLI in your `PATH` (required only for write operations)
+- **pocketd** CLI in your `PATH` (required only for write operations):
+  ```bash
+  curl -sSL https://raw.githubusercontent.com/pokt-network/poktroll/main/tools/scripts/pocketd-install.sh | bash
+  ```
 
 ```bash
 git clone https://github.com/pokt-network/sam.git
