@@ -244,10 +244,36 @@
         </svg>
     );
 
+    const Clock = ({ size = 20 }) => (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+        </svg>
+    );
+
+    const Activity = ({ size = 20 }) => (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline>
+        </svg>
+    );
+
     // Utilities
     const formatStake = (upokt) => {
         const pokt = upokt / 1000000;
         return pokt.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    };
+
+    const formatTimeAgo = (timestamp) => {
+        const now = Date.now();
+        const diff = now - new Date(timestamp).getTime();
+        const seconds = Math.floor(diff / 1000);
+        if (seconds < 60) return `${seconds}s ago`;
+        const minutes = Math.floor(seconds / 60);
+        if (minutes < 60) return `${minutes}m ago`;
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) return `${hours}h ago`;
+        const days = Math.floor(hours / 24);
+        return `${days}d ago`;
     };
 
     const getStakeStatus = (stake, thresholds) => {
@@ -545,6 +571,103 @@
         );
     };
 
+    // Auto Top-Up Events Panel
+    const AutoTopUpEventsPanel = ({ events, loading, onRefresh }) => {
+        const [expanded, setExpanded] = useState(false);
+        const displayEvents = (events || []).slice(0, 20);
+
+        const getStatusColor = (status) => {
+            if (status === 'completed') return 'text-green-400';
+            if (status === 'failed') return 'text-red-400';
+            return 'text-yellow-400';
+        };
+
+        const getStatusBg = (status) => {
+            if (status === 'completed') return 'bg-green-400/10 border-green-400/20';
+            if (status === 'failed') return 'bg-red-400/10 border-red-400/20';
+            return 'bg-yellow-400/10 border-yellow-400/20';
+        };
+
+        return (
+            <div className="glass-card rounded-2xl mb-8 overflow-hidden">
+                <button
+                    onClick={() => setExpanded(!expanded)}
+                    className="w-full flex items-center justify-between px-6 py-4 hover:bg-white/5 transition-all"
+                >
+                    <div className="flex items-center gap-3">
+                        <Activity size={18} className="text-cyan-400" />
+                        <span className="font-semibold text-white">Auto Top-Up Activity</span>
+                        {displayEvents.length > 0 && (
+                            <span className="px-2 py-0.5 rounded-full text-xs font-bold gradient-blue text-white">
+                                {displayEvents.length}
+                            </span>
+                        )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onRefresh(); }}
+                            className="p-1.5 glass-card hover:bg-white/10 rounded-lg transition-all"
+                            title="Refresh events"
+                        >
+                            {loading ? <Loader size={14} /> : <RefreshCw size={14} />}
+                        </button>
+                        {expanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                    </div>
+                </button>
+
+                {expanded && (
+                    <div className="border-t border-white/10 px-6 py-4">
+                        {displayEvents.length === 0 ? (
+                            <div className="text-center py-8 text-white/40">
+                                <Clock size={32} className="mx-auto mb-3 opacity-50" />
+                                <p className="text-sm">No auto top-up events yet</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-2">
+                                {displayEvents.map((event, idx) => (
+                                    <div key={idx} className={`flex items-center gap-4 px-4 py-3 rounded-xl border ${getStatusBg(event.status)}`}>
+                                        <div className="flex-shrink-0 text-xs text-white/50 w-16">
+                                            {formatTimeAgo(event.timestamp)}
+                                        </div>
+                                        <div className="flex-shrink-0">
+                                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold glass-card text-white/70">
+                                                {event.network}
+                                            </span>
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <span className="text-sm font-mono text-white/70" title={event.address}>
+                                                {event.address?.slice(0, 10)}...{event.address?.slice(-6)}
+                                            </span>
+                                            <span className="mx-2 text-white/30">|</span>
+                                            <span className="text-xs text-white/50">
+                                                {formatStake(event.previous_stake)} → {formatStake(event.target_amount)} POKT
+                                            </span>
+                                        </div>
+                                        <div className="flex-shrink-0 flex items-center gap-2">
+                                            {event.fund_tx_hash && (
+                                                <span className="text-[10px] font-mono text-white/40" title={`Fund TX: ${event.fund_tx_hash}`}>
+                                                    F:{event.fund_tx_hash.slice(0, 8)}
+                                                </span>
+                                            )}
+                                            {event.stake_tx_hash && (
+                                                <span className="text-[10px] font-mono text-white/40" title={`Stake TX: ${event.stake_tx_hash}`}>
+                                                    S:{event.stake_tx_hash.slice(0, 8)}
+                                                </span>
+                                            )}
+                                            <span className={`text-xs font-semibold ${getStatusColor(event.status)}`}>
+                                                {event.status?.toUpperCase()}
+                                            </span>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     // Search Bar
     const SearchBar = ({ value, onChange }) => (
         <div className="mb-6">
@@ -580,7 +703,7 @@
     };
 
     // Application Row
-    const ApplicationRow = ({ app, isSelected, onSelect, onUpstake, onFund, onAutoTopUp, thresholds, operationLoading, hasAutoTopUp }) => {
+    const ApplicationRow = ({ app, isSelected, onSelect, onUpstake, onFund, onAutoTopUp, thresholds, operationLoading, hasAutoTopUp, autoTopUpConfig }) => {
         const status = getStakeStatus(app.stake, thresholds);
         const isUpstaking = operationLoading.type === 'upstake' && operationLoading.address === app.address;
         const isFunding = operationLoading.type === 'fund' && operationLoading.address === app.address;
@@ -596,7 +719,15 @@
                     <div className="flex items-center gap-2">
                         <span className="text-sm font-mono text-white/80">{app.address}</span>
                         {hasAutoTopUp && (
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold gradient-blue text-white">AUTO</span>
+                            <div className="relative group">
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold gradient-blue text-white cursor-default">AUTO</span>
+                                {autoTopUpConfig && (
+                                    <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 glass-card rounded-lg px-3 py-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 pointer-events-none z-50 whitespace-nowrap border border-white/20">
+                                        <p className="text-xs text-white/80">Trigger: <span className="font-semibold text-white">{formatStake(autoTopUpConfig.trigger_threshold)} POKT</span></p>
+                                        <p className="text-xs text-white/80">Target: <span className="font-semibold text-white">{formatStake(autoTopUpConfig.target_amount)} POKT</span></p>
+                                    </div>
+                                )}
+                            </div>
                         )}
                     </div>
                 </td>
@@ -691,6 +822,7 @@
                             thresholds={thresholds}
                             operationLoading={operationLoading}
                             hasAutoTopUp={autoTopUpConfigs[app.address]?.enabled}
+                            autoTopUpConfig={autoTopUpConfigs[app.address]}
                         />
                     ))
                 )}
@@ -1066,6 +1198,8 @@
         const [stakeNewAppOpen, setStakeNewAppOpen] = useState(false);
         const [autoTopUpModal, setAutoTopUpModal] = useState({ isOpen: false, app: null });
         const [autoTopUpConfigs, setAutoTopUpConfigs] = useState({});
+        const [autoTopUpEvents, setAutoTopUpEvents] = useState([]);
+        const [eventsLoading, setEventsLoading] = useState(false);
         const [services, setServices] = useState([]);
         const [servicesLoading, setServicesLoading] = useState(false);
         const [thresholds, setThresholds] = useState({
@@ -1095,6 +1229,18 @@
             }
         }, []);
 
+        const loadAutoTopUpEvents = useCallback(async () => {
+            setEventsLoading(true);
+            try {
+                const data = await api.fetchAutoTopUpEvents();
+                setAutoTopUpEvents(data || []);
+            } catch (error) {
+                console.error('Failed to load auto-top-up events:', error.message);
+            } finally {
+                setEventsLoading(false);
+            }
+        }, []);
+
         useEffect(() => {
             const loadInitialData = async () => {
                 try {
@@ -1111,7 +1257,8 @@
                     await Promise.all([
                         loadApplications(currentNetwork),
                         loadBankAccount(currentNetwork),
-                        loadAutoTopUpConfigs(currentNetwork)
+                        loadAutoTopUpConfigs(currentNetwork),
+                        loadAutoTopUpEvents()
                     ]);
                 } catch (error) {
                     showNotification(`Failed to load data: ${error.message}`, 'error');
@@ -1129,7 +1276,10 @@
                 ]);
                 setApps(appsData || []);
                 setBankAccount(bankData);
-                await loadAutoTopUpConfigs(currentNetwork);
+                await Promise.all([
+                    loadAutoTopUpConfigs(currentNetwork),
+                    loadAutoTopUpEvents()
+                ]);
                 showNotification('Data refreshed successfully');
             } catch (error) {
                 showNotification(`Failed to refresh: ${error.message}`, 'error');
@@ -1144,10 +1294,11 @@
             await Promise.all([
                 loadApplications(network),
                 loadBankAccount(network),
-                loadAutoTopUpConfigs(network)
+                loadAutoTopUpConfigs(network),
+                loadAutoTopUpEvents()
             ]);
             showNotification(`Switched to ${network}`);
-        }, [currentNetwork, loadApplications, loadBankAccount, loadAutoTopUpConfigs, showNotification]);
+        }, [currentNetwork, loadApplications, loadBankAccount, loadAutoTopUpConfigs, loadAutoTopUpEvents, showNotification]);
 
         useKeyboardShortcuts({
             r: handleRefresh,
@@ -1275,6 +1426,11 @@
 
                 <div className="max-w-8xl mx-auto px-6 py-8">
                     <StatsPanel apps={filteredApps} thresholds={thresholds} bankAccount={bankAccount} />
+                    <AutoTopUpEventsPanel
+                        events={autoTopUpEvents}
+                        loading={eventsLoading}
+                        onRefresh={loadAutoTopUpEvents}
+                    />
                     <SearchBar value={searchTerm} onChange={setSearchTerm} />
                     <ApplicationsTable
                         apps={filteredApps}

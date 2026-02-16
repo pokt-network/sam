@@ -15,7 +15,8 @@ All notable changes to SAM (Simple AppStakes Manager) are documented in this fil
   - Recent events viewable via `GET /api/autotopup/events`
 - **Config persistence** — New staked applications are automatically added to `config.yaml` via targeted line insertion (preserves comments and formatting)
 - **Frontend modals** — StakeNewAppModal with service dropdown, AutoTopUpModal with threshold/target inputs and enable/disable toggle
-- **Auto top-up indicators** — "AUTO" badge on apps with auto top-up enabled
+- **Auto top-up indicators** — "AUTO" badge on apps with auto top-up enabled; hover tooltip shows trigger/target values
+- **Auto top-up events panel** — Collapsible activity panel between stats and search showing recent auto top-up events with status, timestamps, and tx hashes
 - **Store validation** — `Store.Set()` rejects configs with non-positive values or target <= trigger
 
 ### Fixed
