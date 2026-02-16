@@ -95,6 +95,13 @@ func (s *Store) GetEnabled() map[string]map[string]models.AutoTopUpConfig {
 
 // Set stores or updates a config and persists to disk.
 func (s *Store) Set(network, address string, cfg models.AutoTopUpConfig) error {
+	if cfg.TriggerThreshold <= 0 || cfg.TargetAmount <= 0 {
+		return fmt.Errorf("trigger threshold and target amount must be positive")
+	}
+	if cfg.TargetAmount <= cfg.TriggerThreshold {
+		return fmt.Errorf("target amount must be greater than trigger threshold")
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -136,6 +143,11 @@ func (s *Store) save() error {
 		tmp.Close()
 		os.Remove(tmp.Name())
 		return fmt.Errorf("failed to write temp file: %w", err)
+	}
+	if err := tmp.Sync(); err != nil {
+		tmp.Close()
+		os.Remove(tmp.Name())
+		return fmt.Errorf("failed to sync temp file: %w", err)
 	}
 	if err := tmp.Close(); err != nil {
 		os.Remove(tmp.Name())

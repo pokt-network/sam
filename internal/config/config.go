@@ -90,6 +90,26 @@ func (c *Config) AddApplicationAddress(network, address string) error {
 	return nil
 }
 
+// RemoveApplicationAddress removes an application address from the in-memory config.
+// Used as a rollback when disk persistence fails after AddApplicationAddress.
+func (c *Config) RemoveApplicationAddress(network, address string) {
+	configMu.Lock()
+	defer configMu.Unlock()
+
+	net, ok := c.Config.Networks[network]
+	if !ok {
+		return
+	}
+
+	for i, existing := range net.Applications {
+		if existing == address {
+			net.Applications = append(net.Applications[:i], net.Applications[i+1:]...)
+			c.Config.Networks[network] = net
+			return
+		}
+	}
+}
+
 // SaveApplicationAddress inserts a new application address into config.yaml
 // using targeted line insertion to preserve comments and formatting.
 func SaveApplicationAddress(configPath, network, address string) error {
@@ -109,6 +129,8 @@ func SaveApplicationAddress(configPath, network, address string) error {
 	inApplications := false
 	networkIndent := -1
 	insertIdx := -1
+	applicationsLineIdx := -1 // index of the "applications:" line itself
+	applicationsLineIndent := ""
 
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
@@ -131,6 +153,15 @@ func SaveApplicationAddress(configPath, network, address string) error {
 		// Detect "applications:" within the target network
 		if inTargetNetwork && trimmed == "applications:" {
 			inApplications = true
+			applicationsLineIdx = len(result)
+			// Capture indentation of the applications key for empty-list fallback
+			for _, ch := range line {
+				if ch == ' ' || ch == '\t' {
+					applicationsLineIndent += string(ch)
+				} else {
+					break
+				}
+			}
 			result = append(result, line)
 			continue
 		}
@@ -156,22 +187,28 @@ func SaveApplicationAddress(configPath, network, address string) error {
 		result = append(result, line)
 	}
 
-	if insertIdx == -1 {
+	var newEntry string
+
+	if insertIdx != -1 {
+		// Determine indentation from the last existing entry
+		refLine := result[insertIdx]
+		indent := ""
+		for _, ch := range refLine {
+			if ch == ' ' || ch == '\t' {
+				indent += string(ch)
+			} else {
+				break
+			}
+		}
+		newEntry = indent + "- " + address
+	} else if applicationsLineIdx != -1 {
+		// Empty applications list — insert after the "applications:" line.
+		// Use the applications key indent + 2 extra spaces for list entries.
+		insertIdx = applicationsLineIdx
+		newEntry = applicationsLineIndent + "  - " + address
+	} else {
 		return fmt.Errorf("could not find applications section for network %q", network)
 	}
-
-	// Determine indentation from the line at insertIdx
-	refLine := result[insertIdx]
-	indent := ""
-	for _, ch := range refLine {
-		if ch == ' ' || ch == '\t' {
-			indent += string(ch)
-		} else {
-			break
-		}
-	}
-
-	newEntry := indent + "- " + address
 
 	// Insert after insertIdx
 	updated := make([]string, 0, len(result)+1)

@@ -272,8 +272,8 @@ func TestStore_ConcurrentAccess(t *testing.T) {
 			addr := "pokt1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 			cfg := models.AutoTopUpConfig{
 				Enabled:          n%2 == 0,
-				TriggerThreshold: int64(n * 100),
-				TargetAmount:     int64(n * 500),
+				TriggerThreshold: int64(n*100 + 100),
+				TargetAmount:     int64(n*500 + 500),
 			}
 			s.Set("pocket", addr, cfg)
 			s.Get("pocket", addr)
@@ -287,6 +287,61 @@ func TestStore_ConcurrentAccess(t *testing.T) {
 	_, ok := s.Get("pocket", "pokt1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
 	if !ok {
 		t.Error("expected entry to exist after concurrent writes")
+	}
+}
+
+func TestStore_SetValidation(t *testing.T) {
+	s, err := NewStore(tempStorePath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	addr := "pokt1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	tests := []struct {
+		name    string
+		cfg     models.AutoTopUpConfig
+		wantErr bool
+	}{
+		{
+			name:    "valid config",
+			cfg:     models.AutoTopUpConfig{Enabled: true, TriggerThreshold: 1000, TargetAmount: 5000},
+			wantErr: false,
+		},
+		{
+			name:    "zero trigger",
+			cfg:     models.AutoTopUpConfig{Enabled: true, TriggerThreshold: 0, TargetAmount: 5000},
+			wantErr: true,
+		},
+		{
+			name:    "zero target",
+			cfg:     models.AutoTopUpConfig{Enabled: true, TriggerThreshold: 1000, TargetAmount: 0},
+			wantErr: true,
+		},
+		{
+			name:    "negative trigger",
+			cfg:     models.AutoTopUpConfig{Enabled: true, TriggerThreshold: -100, TargetAmount: 5000},
+			wantErr: true,
+		},
+		{
+			name:    "target equals trigger",
+			cfg:     models.AutoTopUpConfig{Enabled: true, TriggerThreshold: 1000, TargetAmount: 1000},
+			wantErr: true,
+		},
+		{
+			name:    "target less than trigger",
+			cfg:     models.AutoTopUpConfig{Enabled: true, TriggerThreshold: 5000, TargetAmount: 1000},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := s.Set("pocket", addr, tt.cfg)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("Set() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
 	}
 }
 

@@ -67,6 +67,10 @@ Query param `?refresh=true` bypasses cache on read endpoints.
 - **Go deps:** gorilla/mux, rs/cors, gopkg.in/yaml.v3
 - **Frontend:** React 18, TailwindCSS, Babel standalone (all via CDN)
 
+## Changelog
+
+When adding features, fixing bugs, or making notable changes, update `CHANGELOG.md` under the `[Unreleased]` section. Use subsections: `Added`, `Fixed`, `Changed`, `Removed`.
+
 ## Key Patterns
 
 - Read operations query Pocket Network API endpoints directly over HTTP; write operations shell out to `pocketd` CLI

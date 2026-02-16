@@ -288,6 +288,53 @@ func TestSaveApplicationAddress_MultipleNetworks(t *testing.T) {
 	}
 }
 
+func TestSaveApplicationAddress_EmptyApplicationsList(t *testing.T) {
+	configContent := `config:
+  networks:
+    pocket:
+      rpc_endpoint: https://rpc.example.com
+      api_endpoint: https://api.example.com
+      applications:
+      bank: pokt1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+`
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(configContent), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	newAddr := "pokt1cccccccccccccccccccccccccccccccccccccc"
+	if err := SaveApplicationAddress(path, "pocket", newAddr); err != nil {
+		t.Fatalf("SaveApplicationAddress() error = %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+
+	if !strings.Contains(content, "- "+newAddr) {
+		t.Error("new address not found in file")
+	}
+
+	// Bank line should still be present
+	if !strings.Contains(content, "bank: pokt1") {
+		t.Error("bank line was lost")
+	}
+
+	// New address should come after "applications:" and before "bank:"
+	appsIdx := strings.Index(content, "applications:")
+	newIdx := strings.Index(content, "- "+newAddr)
+	bankIdx := strings.Index(content, "bank:")
+	if newIdx <= appsIdx {
+		t.Error("new address should be after applications: line")
+	}
+	if newIdx >= bankIdx {
+		t.Error("new address should be before bank: line")
+	}
+}
+
 func TestLoad_ValidConfig(t *testing.T) {
 	configContent := `config:
   keyring-backend: test

@@ -256,6 +256,7 @@ func (s *Server) handleFund(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.AppCache.Delete(network)
 	s.BankCache.Delete(network)
 
 	respondWithJSON(w, http.StatusOK, result)
@@ -337,7 +338,8 @@ func (s *Server) handleStakeNewApplication(w http.ResponseWriter, r *http.Reques
 			s.Logger.Warn("failed to add address to in-memory config", "error", err)
 		} else if s.ConfigPath != "" {
 			if err := config.SaveApplicationAddress(s.ConfigPath, network, req.Address); err != nil {
-				s.Logger.Error("failed to persist address to config.yaml", "error", err)
+				s.Logger.Error("failed to persist address to config.yaml, rolling back in-memory change", "error", err)
+				s.Config.RemoveApplicationAddress(network, req.Address)
 			}
 		}
 	}

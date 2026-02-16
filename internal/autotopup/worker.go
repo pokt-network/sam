@@ -28,8 +28,9 @@ type Worker struct {
 	BankCache *cache.Cache[models.BankAccount]
 	Logger    *slog.Logger
 
-	mu     sync.Mutex
-	events []models.AutoTopUpEvent
+	mu       sync.Mutex
+	eventsMu sync.Mutex
+	events   []models.AutoTopUpEvent
 }
 
 // NewWorker creates a new auto-top-up worker.
@@ -59,13 +60,13 @@ func (w *Worker) Run(ctx context.Context) {
 			w.Logger.Info("auto-top-up worker stopped")
 			return
 		case <-ticker.C:
-			w.RunOnce()
+			w.RunOnce(ctx)
 		}
 	}
 }
 
 // RunOnce performs a single cycle of auto-top-up checks.
-func (w *Worker) RunOnce() {
+func (w *Worker) RunOnce(ctx context.Context) {
 	if !w.mu.TryLock() {
 		w.Logger.Warn("auto-top-up cycle already in progress, skipping")
 		return
@@ -80,6 +81,11 @@ func (w *Worker) RunOnce() {
 	w.Logger.Info("auto-top-up cycle starting", "networks", len(enabled))
 
 	for network, apps := range enabled {
+		if ctx.Err() != nil {
+			w.Logger.Info("auto-top-up cycle cancelled")
+			return
+		}
+
 		netCfg, ok := w.Config.Config.Networks[network]
 		if !ok {
 			w.Logger.Warn("auto-top-up: unknown network", "network", network)
@@ -87,14 +93,18 @@ func (w *Worker) RunOnce() {
 		}
 
 		for address, cfg := range apps {
-			w.processApp(network, address, cfg, netCfg)
+			if ctx.Err() != nil {
+				w.Logger.Info("auto-top-up cycle cancelled")
+				return
+			}
+			w.processApp(ctx, network, address, cfg, netCfg)
 		}
 	}
 
 	w.Logger.Info("auto-top-up cycle complete")
 }
 
-func (w *Worker) processApp(network, address string, cfg models.AutoTopUpConfig, netCfg config.NetworkConfig) {
+func (w *Worker) processApp(ctx context.Context, network, address string, cfg models.AutoTopUpConfig, netCfg config.NetworkConfig) {
 	event := models.AutoTopUpEvent{
 		Timestamp:    time.Now(),
 		Network:      network,
@@ -143,6 +153,8 @@ func (w *Worker) processApp(network, address string, cfg models.AutoTopUpConfig,
 			errMsg := "fund failed"
 			if err != nil {
 				errMsg = err.Error()
+			} else if fundResult.Message != "" {
+				errMsg = fundResult.Message
 			}
 			w.Logger.Error("auto-top-up: fund failed", "address", address, "error", errMsg)
 			event.Error = errMsg
@@ -152,7 +164,7 @@ func (w *Worker) processApp(network, address string, cfg models.AutoTopUpConfig,
 		event.FundTxHash = fundResult.TxHash
 
 		// Poll for balance confirmation.
-		if !w.pollBalance(address, netCfg.APIEndpoint, app.LiquidBalance+fundAmount) {
+		if !w.pollBalance(ctx, address, netCfg.APIEndpoint, app.LiquidBalance+fundAmount) {
 			w.Logger.Warn("auto-top-up: balance not confirmed after polling, proceeding anyway", "address", address)
 		}
 	} else {
@@ -169,6 +181,8 @@ func (w *Worker) processApp(network, address string, cfg models.AutoTopUpConfig,
 		errMsg := "upstake failed"
 		if err != nil {
 			errMsg = err.Error()
+		} else if stakeResult.Message != "" {
+			errMsg = stakeResult.Message
 		}
 		w.Logger.Error("auto-top-up: upstake failed", "address", address, "error", errMsg)
 		event.Error = errMsg
@@ -188,9 +202,14 @@ func (w *Worker) processApp(network, address string, cfg models.AutoTopUpConfig,
 	w.Logger.Info("auto-top-up: success", "address", address, "network", network)
 }
 
-func (w *Worker) pollBalance(address, apiEndpoint string, minBalance int64) bool {
+func (w *Worker) pollBalance(ctx context.Context, address, apiEndpoint string, minBalance int64) bool {
 	for i := 0; i < pollMaxAttempts; i++ {
-		time.Sleep(pollInterval)
+		select {
+		case <-ctx.Done():
+			w.Logger.Info("auto-top-up: poll cancelled during shutdown")
+			return false
+		case <-time.After(pollInterval):
+		}
 		balance, err := w.Client.QueryBalance(address, apiEndpoint)
 		if err != nil {
 			w.Logger.Warn("auto-top-up: poll balance error", "attempt", i+1, "error", err)
@@ -206,6 +225,9 @@ func (w *Worker) pollBalance(address, apiEndpoint string, minBalance int64) bool
 }
 
 func (w *Worker) addEvent(event models.AutoTopUpEvent) {
+	w.eventsMu.Lock()
+	defer w.eventsMu.Unlock()
+
 	w.events = append(w.events, event)
 	if len(w.events) > maxEvents {
 		w.events = w.events[len(w.events)-maxEvents:]
@@ -214,8 +236,8 @@ func (w *Worker) addEvent(event models.AutoTopUpEvent) {
 
 // Events returns a copy of recent events.
 func (w *Worker) Events() []models.AutoTopUpEvent {
-	w.mu.Lock()
-	defer w.mu.Unlock()
+	w.eventsMu.Lock()
+	defer w.eventsMu.Unlock()
 
 	result := make([]models.AutoTopUpEvent, len(w.events))
 	copy(result, w.events)
