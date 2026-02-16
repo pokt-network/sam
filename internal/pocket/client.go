@@ -147,6 +147,43 @@ func (c *Client) QueryApplication(address, apiEndpoint, network string) (*models
 	return app, nil
 }
 
+// QueryServices returns available services on the network.
+func (c *Client) QueryServices(apiEndpoint string) ([]models.ServiceInfo, error) {
+	url := fmt.Sprintf("%s/pokt-network/poktroll/service/all_services", apiEndpoint)
+	c.Logger.Debug("querying services", "url", url)
+
+	resp, err := c.HTTP.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query services API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
+		return nil, fmt.Errorf("services API returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read services response: %w", err)
+	}
+
+	var apiResp models.APIServicesResponse
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		return nil, fmt.Errorf("failed to parse services response: %w", err)
+	}
+
+	services := make([]models.ServiceInfo, 0, len(apiResp.Service))
+	for _, s := range apiResp.Service {
+		services = append(services, models.ServiceInfo{
+			ID:   s.ID,
+			Name: s.Name,
+		})
+	}
+
+	return services, nil
+}
+
 // QueryBankAccount returns the bank account balance for a network.
 func (c *Client) QueryBankAccount(address, apiEndpoint, network string) (*models.BankAccount, error) {
 	balance, err := c.QueryBalance(address, apiEndpoint)

@@ -4,11 +4,14 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 
 	"github.com/pokt-network/sam/internal/validate"
 )
+
+var configMu sync.Mutex
 
 // NetworkConfig holds per-network connection and address settings.
 type NetworkConfig struct {
@@ -63,6 +66,112 @@ func Load(path string) (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+// AddApplicationAddress adds an application address to the in-memory config.
+// Returns an error if the address already exists in the network.
+func (c *Config) AddApplicationAddress(network, address string) error {
+	configMu.Lock()
+	defer configMu.Unlock()
+
+	net, ok := c.Config.Networks[network]
+	if !ok {
+		return fmt.Errorf("network %q not found", network)
+	}
+
+	for _, existing := range net.Applications {
+		if existing == address {
+			return fmt.Errorf("address %s already exists in network %s", address, network)
+		}
+	}
+
+	net.Applications = append(net.Applications, address)
+	c.Config.Networks[network] = net
+	return nil
+}
+
+// SaveApplicationAddress inserts a new application address into config.yaml
+// using targeted line insertion to preserve comments and formatting.
+func SaveApplicationAddress(configPath, network, address string) error {
+	configMu.Lock()
+	defer configMu.Unlock()
+
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("failed to read config file: %w", err)
+	}
+
+	lines := strings.Split(string(data), "\n")
+	var result []string
+
+	// State machine to find the correct insertion point
+	inTargetNetwork := false
+	inApplications := false
+	insertIdx := -1
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Detect network header (e.g. "    pocket:" under "networks:")
+		if !strings.HasPrefix(trimmed, "#") && strings.HasSuffix(trimmed, ":") && !strings.Contains(trimmed, " ") {
+			name := strings.TrimSuffix(trimmed, ":")
+			inTargetNetwork = (name == network)
+			inApplications = false
+		}
+
+		// Detect "applications:" within the target network
+		if inTargetNetwork && trimmed == "applications:" {
+			inApplications = true
+			result = append(result, line)
+			continue
+		}
+
+		// While in the applications list, track the last "- pokt1..." entry
+		if inApplications {
+			if strings.HasPrefix(trimmed, "- pokt1") {
+				insertIdx = len(result)
+				result = append(result, line)
+				continue
+			}
+			// A commented line is still part of the block
+			if strings.HasPrefix(trimmed, "#") {
+				result = append(result, line)
+				continue
+			}
+			// Any other line means we've left the applications block
+			if trimmed != "" {
+				inApplications = false
+			}
+		}
+
+		result = append(result, line)
+		_ = i
+	}
+
+	if insertIdx == -1 {
+		return fmt.Errorf("could not find applications section for network %q", network)
+	}
+
+	// Determine indentation from the line at insertIdx
+	refLine := result[insertIdx]
+	indent := ""
+	for _, ch := range refLine {
+		if ch == ' ' || ch == '\t' {
+			indent += string(ch)
+		} else {
+			break
+		}
+	}
+
+	newEntry := indent + "- " + address
+
+	// Insert after insertIdx
+	updated := make([]string, 0, len(result)+1)
+	updated = append(updated, result[:insertIdx+1]...)
+	updated = append(updated, newEntry)
+	updated = append(updated, result[insertIdx+1:]...)
+
+	return os.WriteFile(configPath, []byte(strings.Join(updated, "\n")), 0600)
 }
 
 func validateConfig(cfg *Config) error {

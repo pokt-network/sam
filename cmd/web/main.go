@@ -14,6 +14,7 @@ import (
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
 
+	"github.com/pokt-network/sam/internal/autotopup"
 	"github.com/pokt-network/sam/internal/cache"
 	"github.com/pokt-network/sam/internal/config"
 	"github.com/pokt-network/sam/internal/handler"
@@ -24,7 +25,8 @@ import (
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
-	cfg, err := config.Load("config.yaml")
+	configPath := "config.yaml"
+	cfg, err := config.Load(configPath)
 	if err != nil {
 		logger.Error("failed to load config", "error", err)
 		os.Exit(1)
@@ -45,13 +47,27 @@ func main() {
 	client := pocket.NewClient(logger)
 	executor := pocket.NewExecutor(cfg, client, logger)
 
+	appCache := cache.New[[]models.Application](1 * time.Minute)
+	bankCache := cache.New[models.BankAccount](1 * time.Minute)
+
+	topUpStore, err := autotopup.NewStore("autotopup.json")
+	if err != nil {
+		logger.Error("failed to initialize auto-top-up store", "error", err)
+		os.Exit(1)
+	}
+
+	worker := autotopup.NewWorker(topUpStore, cfg, client, executor, appCache, bankCache, logger)
+
 	srv := &handler.Server{
-		Config:    cfg,
-		Client:    client,
-		Executor:  executor,
-		AppCache:  cache.New[[]models.Application](1 * time.Minute),
-		BankCache: cache.New[models.BankAccount](1 * time.Minute),
-		Logger:    logger,
+		Config:     cfg,
+		ConfigPath: configPath,
+		Client:     client,
+		Executor:   executor,
+		AppCache:   appCache,
+		BankCache:  bankCache,
+		AutoTopUp:  topUpStore,
+		Worker:     worker,
+		Logger:     logger,
 	}
 
 	r := mux.NewRouter()
@@ -73,7 +89,7 @@ func main() {
 			"http://localhost:" + port,
 			"http://127.0.0.1:" + port,
 		},
-		AllowedMethods: []string{"GET", "POST", "OPTIONS"},
+		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders: []string{"Content-Type"},
 	})
 
@@ -84,6 +100,10 @@ func main() {
 		ReadTimeout:  30 * time.Second,
 	}
 
+	// Start auto-top-up worker.
+	workerCtx, workerCancel := context.WithCancel(context.Background())
+	go worker.Run(workerCtx)
+
 	// Graceful shutdown.
 	done := make(chan struct{})
 	go func() {
@@ -91,6 +111,9 @@ func main() {
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		sig := <-sigCh
 		logger.Info("received signal, shutting down", "signal", sig)
+
+		// Stop worker before HTTP server.
+		workerCancel()
 
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()

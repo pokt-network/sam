@@ -8,6 +8,79 @@ import (
 	"github.com/pokt-network/sam/internal/validate"
 )
 
+// StakeNewApplication stakes a new application with the given service ID and amount (in uPOKT).
+func (e *Executor) StakeNewApplication(appAddress, serviceID, network string, amountUpokt int64, rpcEndpoint string) (*models.TransactionResponse, error) {
+	if err := validate.ServiceID(serviceID); err != nil {
+		return nil, fmt.Errorf("invalid service ID: %w", err)
+	}
+
+	amountStr := fmt.Sprintf("%dupokt", amountUpokt)
+
+	e.Logger.Info("staking new application",
+		"address", appAddress,
+		"service_id", serviceID,
+		"amount", amountStr,
+	)
+
+	tempFile, err := os.CreateTemp("", "pocketd-stake-*.yaml")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temp config file: %w", err)
+	}
+	if err := tempFile.Chmod(0600); err != nil {
+		tempFile.Close()
+		os.Remove(tempFile.Name())
+		return nil, fmt.Errorf("failed to set temp file permissions: %w", err)
+	}
+	tempConfig := tempFile.Name()
+
+	yamlContent := fmt.Sprintf("stake_amount: %s\nservice_ids:\n  - %s\n", amountStr, serviceID)
+	if _, err := tempFile.WriteString(yamlContent); err != nil {
+		tempFile.Close()
+		os.Remove(tempConfig)
+		return nil, fmt.Errorf("failed to write temp config file: %w", err)
+	}
+	if err := tempFile.Close(); err != nil {
+		os.Remove(tempConfig)
+		return nil, fmt.Errorf("failed to close temp config file: %w", err)
+	}
+	defer os.Remove(tempConfig)
+
+	args := []string{
+		"tx", "application", "stake-application",
+		"--config", tempConfig,
+		"--from", appAddress,
+		"--node", rpcEndpoint,
+		"--chain-id", network,
+		"--yes",
+		"--gas=auto",
+		"--fees=1upokt",
+		"--output", "json",
+	}
+
+	if e.Config.Config.KeyringBackend != "" {
+		args = append(args, "--keyring-backend", e.Config.Config.KeyringBackend)
+	}
+
+	e.Logger.Debug("stake new app command", "args", args)
+
+	output, err := e.Run(args...)
+	if err != nil {
+		e.Logger.Error("stake new app command failed", "error", err)
+		return &models.TransactionResponse{
+			Success: false,
+			Message: "stake transaction failed",
+		}, nil
+	}
+
+	e.Logger.Info("stake new app transaction submitted", "output", output)
+
+	if txhash := parseTxHash(output); txhash != "" {
+		return &models.TransactionResponse{TxHash: txhash, Success: true}, nil
+	}
+
+	return &models.TransactionResponse{Success: true, Message: "Transaction submitted"}, nil
+}
+
 // UpstakeApplication increases an application's stake by the given amount (in uPOKT).
 func (e *Executor) UpstakeApplication(appAddress, bankAddress, network string, amount int64, rpcEndpoint, apiEndpoint string) (*models.TransactionResponse, error) {
 	app, err := e.Client.QueryApplication(appAddress, apiEndpoint, network)

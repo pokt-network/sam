@@ -122,6 +122,46 @@
             const response = await fetch(`${API_BASE_URL}/config`);
             if (!response.ok) throw new Error('Failed to fetch config');
             return response.json();
+        },
+        fetchServices: async (network) => {
+            const response = await fetch(`${API_BASE_URL}/services?network=${network}`);
+            if (!response.ok) throw new Error('Failed to fetch services');
+            return response.json();
+        },
+        stakeNewApplication: async (network, address, serviceId, amount) => {
+            const response = await fetch(`${API_BASE_URL}/applications/stake?network=${network}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ address, service_id: serviceId, amount })
+            });
+            if (!response.ok) throw new Error('Failed to stake application');
+            return response.json();
+        },
+        fetchAutoTopUp: async (network) => {
+            const response = await fetch(`${API_BASE_URL}/autotopup?network=${network}`);
+            if (!response.ok) throw new Error('Failed to fetch auto-top-up configs');
+            return response.json();
+        },
+        setAutoTopUp: async (address, network, config) => {
+            const response = await fetch(`${API_BASE_URL}/applications/${address}/autotopup?network=${network}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(config)
+            });
+            if (!response.ok) throw new Error('Failed to set auto-top-up config');
+            return response.json();
+        },
+        deleteAutoTopUp: async (address, network) => {
+            const response = await fetch(`${API_BASE_URL}/applications/${address}/autotopup?network=${network}`, {
+                method: 'DELETE'
+            });
+            if (!response.ok) throw new Error('Failed to delete auto-top-up config');
+            return response.json();
+        },
+        fetchAutoTopUpEvents: async () => {
+            const response = await fetch(`${API_BASE_URL}/autotopup/events`);
+            if (!response.ok) throw new Error('Failed to fetch auto-top-up events');
+            return response.json();
         }
     };
 
@@ -185,6 +225,22 @@
     const Loader = ({ size = 24 }) => (
         <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="animate-spin">
             <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
+        </svg>
+    );
+
+    const Plus = ({ size = 20 }) => (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+        </svg>
+    );
+
+    const Repeat = ({ size = 20 }) => (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <polyline points="17 1 21 5 17 9"></polyline>
+            <path d="M3 11V9a4 4 0 0 1 4-4h14"></path>
+            <polyline points="7 23 3 19 7 15"></polyline>
+            <path d="M21 13v2a4 4 0 0 1-4 4H3"></path>
         </svg>
     );
 
@@ -381,7 +437,7 @@
     }
 
     // Header Component
-    const Header = ({ currentNetwork, onRefresh, loading, autoRefreshEnabled, onToggleAutoRefresh, onNetworkClick }) => (
+    const Header = ({ currentNetwork, onRefresh, loading, autoRefreshEnabled, onToggleAutoRefresh, onNetworkClick, onStakeNewApp }) => (
         <div className="glass-card border-b border-white/10">
             <div className="max-w-8xl mx-auto px-6 py-6">
                 <div className="flex items-center justify-between mb-6">
@@ -398,6 +454,13 @@
                         )}
                     </div>
                     <div className="flex items-center gap-3">
+                        <button
+                            onClick={onStakeNewApp}
+                            className="px-4 py-2 btn-primary rounded-lg font-medium transition-all flex items-center gap-2"
+                        >
+                            <Plus size={16} />
+                            Stake New App
+                        </button>
                         <button
                             onClick={onToggleAutoRefresh}
                             className={`px-4 py-2 rounded-lg font-medium transition-all ${
@@ -517,7 +580,7 @@
     };
 
     // Application Row
-    const ApplicationRow = ({ app, isSelected, onSelect, onUpstake, onFund, thresholds, operationLoading }) => {
+    const ApplicationRow = ({ app, isSelected, onSelect, onUpstake, onFund, onAutoTopUp, thresholds, operationLoading, hasAutoTopUp }) => {
         const status = getStakeStatus(app.stake, thresholds);
         const isUpstaking = operationLoading.type === 'upstake' && operationLoading.address === app.address;
         const isFunding = operationLoading.type === 'fund' && operationLoading.address === app.address;
@@ -530,7 +593,12 @@
                 }`}
             >
                 <td className="px-6 py-4">
-                    <span className="text-sm font-mono text-white/80">{app.address}</span>
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm font-mono text-white/80">{app.address}</span>
+                        {hasAutoTopUp && (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold gradient-blue text-white">AUTO</span>
+                        )}
+                    </div>
                 </td>
                 <td className="px-6 py-4">
                     <span className="text-sm font-medium text-white">{app.service_id}</span>
@@ -552,6 +620,13 @@
                 </td>
                 <td className="px-6 py-4">
                     <div className="flex items-center justify-end gap-2">
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onAutoTopUp(app); }}
+                            className={`p-2 glass-card hover:bg-white/10 rounded-lg transition-all ${hasAutoTopUp ? 'ring-1 ring-cyan-400/50' : ''}`}
+                            title="Auto Top-Up"
+                        >
+                            <Repeat size={16} className={hasAutoTopUp ? 'text-cyan-400' : 'text-white/40'} />
+                        </button>
                         <button
                             onClick={(e) => { e.stopPropagation(); onUpstake(app); }}
                             disabled={isUpstaking}
@@ -575,7 +650,7 @@
     };
 
     // Applications Table
-    const ApplicationsTable = ({ apps, selectedAddress, onSelect, onUpstake, onFund, thresholds, sortField, sortDirection, onSort, operationLoading }) => (
+    const ApplicationsTable = ({ apps, selectedAddress, onSelect, onUpstake, onFund, onAutoTopUp, thresholds, sortField, sortDirection, onSort, operationLoading, autoTopUpConfigs }) => (
         <div className="glass-card rounded-2xl overflow-hidden">
             <table className="w-full">
                 <thead className="bg-white/5">
@@ -612,8 +687,10 @@
                             onSelect={onSelect}
                             onUpstake={onUpstake}
                             onFund={onFund}
+                            onAutoTopUp={onAutoTopUp}
                             thresholds={thresholds}
                             operationLoading={operationLoading}
+                            hasAutoTopUp={autoTopUpConfigs[app.address]?.enabled}
                         />
                     ))
                 )}
@@ -739,6 +816,232 @@
         );
     };
 
+    // Stake New App Modal
+    const StakeNewAppModal = ({ isOpen, onClose, onConfirm, services, servicesLoading, actionLoading }) => {
+        const [address, setAddress] = useState('');
+        const [serviceId, setServiceId] = useState('');
+        const [amount, setAmount] = useState('');
+        const addressRef = useRef(null);
+
+        useEffect(() => {
+            if (isOpen) {
+                setAddress('');
+                setServiceId('');
+                setAmount('');
+                setTimeout(() => addressRef.current?.focus(), 50);
+            }
+        }, [isOpen]);
+
+        useEffect(() => {
+            if (!isOpen) return;
+            const handleKeyDown = (e) => {
+                if (e.key === 'Escape') onClose();
+            };
+            window.addEventListener('keydown', handleKeyDown);
+            return () => window.removeEventListener('keydown', handleKeyDown);
+        }, [isOpen, onClose]);
+
+        if (!isOpen) return null;
+
+        const numericAmount = parseFloat(amount);
+        const isValid = address.startsWith('pokt1') && address.length === 43 && serviceId && !isNaN(numericAmount) && numericAmount > 0;
+
+        const handleSubmit = (e) => {
+            e.preventDefault();
+            if (isValid && !actionLoading) onConfirm(address, serviceId, numericAmount);
+        };
+
+        return (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
+                <div className="glass-card rounded-2xl p-8 max-w-md w-full border-2 border-white/20" onClick={(e) => e.stopPropagation()}>
+                    <h2 className="text-2xl font-black gradient-text mb-4">Stake New Application</h2>
+                    <form onSubmit={handleSubmit}>
+                        <div className="mb-4">
+                            <label className="block text-sm text-white/60 mb-2">Application Address</label>
+                            <input
+                                ref={addressRef}
+                                type="text"
+                                value={address}
+                                onChange={(e) => setAddress(e.target.value)}
+                                placeholder="pokt1..."
+                                className="w-full px-4 py-3 glass-card rounded-xl text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all font-mono text-sm"
+                            />
+                        </div>
+                        <div className="mb-4">
+                            <label className="block text-sm text-white/60 mb-2">Service ID</label>
+                            {servicesLoading ? (
+                                <div className="flex items-center gap-2 px-4 py-3 glass-card rounded-xl text-white/40">
+                                    <Loader size={16} /> Loading services...
+                                </div>
+                            ) : (
+                                <select
+                                    value={serviceId}
+                                    onChange={(e) => setServiceId(e.target.value)}
+                                    className="w-full px-4 py-3 glass-card rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all"
+                                    style={{background: 'rgba(255,255,255,0.03)'}}
+                                >
+                                    <option value="">Select a service...</option>
+                                    {services.map(s => (
+                                        <option key={s.id} value={s.id} style={{background: '#001B44'}}>
+                                            {s.id}{s.name ? ` - ${s.name}` : ''}
+                                        </option>
+                                    ))}
+                                </select>
+                            )}
+                        </div>
+                        <div className="mb-6">
+                            <label className="block text-sm text-white/60 mb-2">Stake Amount (POKT)</label>
+                            <input
+                                type="number"
+                                step="any"
+                                min="0"
+                                value={amount}
+                                onChange={(e) => setAmount(e.target.value)}
+                                placeholder="Enter amount..."
+                                className="w-full px-4 py-3 glass-card rounded-xl text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all text-lg"
+                            />
+                        </div>
+                        <div className="flex gap-3">
+                            <button
+                                type="submit"
+                                disabled={!isValid || actionLoading}
+                                className="flex-1 px-6 py-3 btn-primary rounded-xl font-bold text-white disabled:opacity-50 flex items-center justify-center gap-2"
+                            >
+                                {actionLoading && <Loader size={16} />}
+                                Stake Application
+                            </button>
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                className="flex-1 px-6 py-3 glass-card hover:bg-white/10 rounded-xl font-bold transition-all"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        );
+    };
+
+    // Auto Top-Up Modal
+    const AutoTopUpModal = ({ isOpen, onClose, onConfirm, onDelete, app, existingConfig, actionLoading }) => {
+        const [enabled, setEnabled] = useState(true);
+        const [triggerThreshold, setTriggerThreshold] = useState('');
+        const [targetAmount, setTargetAmount] = useState('');
+
+        useEffect(() => {
+            if (isOpen && existingConfig) {
+                setEnabled(existingConfig.enabled);
+                setTriggerThreshold(String(existingConfig.trigger_threshold / 1000000));
+                setTargetAmount(String(existingConfig.target_amount / 1000000));
+            } else if (isOpen) {
+                setEnabled(true);
+                setTriggerThreshold('');
+                setTargetAmount('');
+            }
+        }, [isOpen, existingConfig]);
+
+        useEffect(() => {
+            if (!isOpen) return;
+            const handleKeyDown = (e) => {
+                if (e.key === 'Escape') onClose();
+            };
+            window.addEventListener('keydown', handleKeyDown);
+            return () => window.removeEventListener('keydown', handleKeyDown);
+        }, [isOpen, onClose]);
+
+        if (!isOpen || !app) return null;
+
+        const trigger = parseFloat(triggerThreshold);
+        const target = parseFloat(targetAmount);
+        const isValid = !isNaN(trigger) && trigger > 0 && !isNaN(target) && target > 0 && target > trigger;
+
+        const handleSubmit = (e) => {
+            e.preventDefault();
+            if (isValid && !actionLoading) {
+                onConfirm(app.address, { enabled, trigger_threshold: trigger, target_amount: target });
+            }
+        };
+
+        return (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
+                <div className="glass-card rounded-2xl p-8 max-w-md w-full border-2 border-white/20" onClick={(e) => e.stopPropagation()}>
+                    <h2 className="text-2xl font-black gradient-text mb-2">Auto Top-Up</h2>
+                    <p className="text-white/60 text-sm mb-6 font-mono truncate">{app.address}</p>
+                    <form onSubmit={handleSubmit}>
+                        <div className="mb-4 flex items-center gap-3">
+                            <label className="text-sm text-white/60">Enable Auto Top-Up</label>
+                            <button
+                                type="button"
+                                onClick={() => setEnabled(!enabled)}
+                                className={`w-12 h-6 rounded-full transition-all relative ${enabled ? 'gradient-blue' : 'bg-white/20'}`}
+                            >
+                                <span className={`absolute top-0.5 w-5 h-5 bg-white rounded-full transition-all ${enabled ? 'left-6' : 'left-0.5'}`}></span>
+                            </button>
+                        </div>
+                        <div className="mb-4">
+                            <label className="block text-sm text-white/60 mb-2">Trigger Threshold (POKT)</label>
+                            <p className="text-xs text-white/40 mb-2">Top up when stake falls below this amount</p>
+                            <input
+                                type="number"
+                                step="any"
+                                min="0"
+                                value={triggerThreshold}
+                                onChange={(e) => setTriggerThreshold(e.target.value)}
+                                placeholder="e.g. 1000"
+                                className="w-full px-4 py-3 glass-card rounded-xl text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all"
+                            />
+                        </div>
+                        <div className="mb-6">
+                            <label className="block text-sm text-white/60 mb-2">Target Amount (POKT)</label>
+                            <p className="text-xs text-white/40 mb-2">Top up stake to this amount</p>
+                            <input
+                                type="number"
+                                step="any"
+                                min="0"
+                                value={targetAmount}
+                                onChange={(e) => setTargetAmount(e.target.value)}
+                                placeholder="e.g. 5000"
+                                className="w-full px-4 py-3 glass-card rounded-xl text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all"
+                            />
+                        </div>
+                        {!isValid && trigger > 0 && target > 0 && target <= trigger && (
+                            <p className="text-red-400 text-sm mb-4">Target amount must be greater than trigger threshold</p>
+                        )}
+                        <div className="flex gap-3">
+                            <button
+                                type="submit"
+                                disabled={!isValid || actionLoading}
+                                className="flex-1 px-6 py-3 btn-primary rounded-xl font-bold text-white disabled:opacity-50 flex items-center justify-center gap-2"
+                            >
+                                {actionLoading && <Loader size={16} />}
+                                Save
+                            </button>
+                            {existingConfig && (
+                                <button
+                                    type="button"
+                                    onClick={() => onDelete(app.address)}
+                                    disabled={actionLoading}
+                                    className="px-6 py-3 rounded-xl font-bold transition-all text-red-400 glass-card hover:bg-red-400/10 disabled:opacity-50"
+                                >
+                                    Remove
+                                </button>
+                            )}
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                className="flex-1 px-6 py-3 glass-card hover:bg-white/10 rounded-xl font-bold transition-all"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        );
+    };
+
     // Notification
     const Notification = ({ message, type }) => (
         <div className="fixed bottom-6 right-6 z-50 max-w-md">
@@ -760,6 +1063,11 @@
         const [operationLoading, setOperationLoading] = useState({ type: null, address: null });
         const [amountModal, setAmountModal] = useState({ isOpen: false });
         const [networkModalOpen, setNetworkModalOpen] = useState(false);
+        const [stakeNewAppOpen, setStakeNewAppOpen] = useState(false);
+        const [autoTopUpModal, setAutoTopUpModal] = useState({ isOpen: false, app: null });
+        const [autoTopUpConfigs, setAutoTopUpConfigs] = useState({});
+        const [services, setServices] = useState([]);
+        const [servicesLoading, setServicesLoading] = useState(false);
         const [thresholds, setThresholds] = useState({
             warning_threshold: 4500000000,
             danger_threshold: 1000000000
@@ -778,6 +1086,15 @@
             loadBankAccount(currentNetwork);
         }, currentNetwork);
 
+        const loadAutoTopUpConfigs = useCallback(async (network) => {
+            try {
+                const data = await api.fetchAutoTopUp(network);
+                setAutoTopUpConfigs(data || {});
+            } catch (error) {
+                console.error('Failed to load auto-top-up configs:', error.message);
+            }
+        }, []);
+
         useEffect(() => {
             const loadInitialData = async () => {
                 try {
@@ -791,8 +1108,11 @@
                     } else {
                         console.info('Config thresholds missing or invalid:', config && config.thresholds);
                     }
-                    await loadApplications(currentNetwork);
-                    await loadBankAccount(currentNetwork);
+                    await Promise.all([
+                        loadApplications(currentNetwork),
+                        loadBankAccount(currentNetwork),
+                        loadAutoTopUpConfigs(currentNetwork)
+                    ]);
                 } catch (error) {
                     showNotification(`Failed to load data: ${error.message}`, 'error');
                 }
@@ -809,20 +1129,25 @@
                 ]);
                 setApps(appsData || []);
                 setBankAccount(bankData);
+                await loadAutoTopUpConfigs(currentNetwork);
                 showNotification('Data refreshed successfully');
             } catch (error) {
                 showNotification(`Failed to refresh: ${error.message}`, 'error');
             } finally {
                 setLoading(false);
             }
-        }, [currentNetwork, showNotification, setLoading, setApps, setBankAccount]);
+        }, [currentNetwork, showNotification, setLoading, setApps, setBankAccount, loadAutoTopUpConfigs]);
 
         const handleNetworkSelect = useCallback(async (network) => {
             if (network === currentNetwork) return;
             setCurrentNetwork(network);
-            await Promise.all([loadApplications(network), loadBankAccount(network)]);
+            await Promise.all([
+                loadApplications(network),
+                loadBankAccount(network),
+                loadAutoTopUpConfigs(network)
+            ]);
             showNotification(`Switched to ${network}`);
-        }, [currentNetwork, loadApplications, loadBankAccount, showNotification]);
+        }, [currentNetwork, loadApplications, loadBankAccount, loadAutoTopUpConfigs, showNotification]);
 
         useKeyboardShortcuts({
             r: handleRefresh,
@@ -874,6 +1199,68 @@
             setSelectedAddress(prev => prev === address ? null : address);
         }, []);
 
+        // Stake New App
+        const handleOpenStakeNewApp = useCallback(async () => {
+            setStakeNewAppOpen(true);
+            setServicesLoading(true);
+            try {
+                const data = await api.fetchServices(currentNetwork);
+                setServices(data || []);
+            } catch (error) {
+                showNotification(`Failed to load services: ${error.message}`, 'error');
+                setServices([]);
+            } finally {
+                setServicesLoading(false);
+            }
+        }, [currentNetwork, showNotification]);
+
+        const handleStakeNewAppConfirm = useCallback(async (address, serviceId, amount) => {
+            setOperationLoading({ type: 'stake', address });
+            try {
+                const result = await api.stakeNewApplication(currentNetwork, address, serviceId, amount);
+                showNotification(`Staked ${amount} POKT. TX: ${result.tx_hash || 'submitted'}`);
+                setStakeNewAppOpen(false);
+                await Promise.all([loadApplications(currentNetwork), loadBankAccount(currentNetwork)]);
+            } catch (error) {
+                showNotification(`Stake failed: ${error.message}`, 'error');
+            } finally {
+                setOperationLoading({ type: null, address: null });
+            }
+        }, [currentNetwork, showNotification, loadApplications, loadBankAccount]);
+
+        // Auto Top-Up
+        const handleAutoTopUp = useCallback((app) => {
+            setAutoTopUpModal({ isOpen: true, app });
+        }, []);
+
+        const handleAutoTopUpConfirm = useCallback(async (address, config) => {
+            setOperationLoading({ type: 'autotopup', address });
+            try {
+                await api.setAutoTopUp(address, currentNetwork, config);
+                showNotification(`Auto top-up ${config.enabled ? 'enabled' : 'disabled'} for ${address.slice(0, 10)}...`);
+                setAutoTopUpModal({ isOpen: false, app: null });
+                await loadAutoTopUpConfigs(currentNetwork);
+            } catch (error) {
+                showNotification(`Failed to set auto top-up: ${error.message}`, 'error');
+            } finally {
+                setOperationLoading({ type: null, address: null });
+            }
+        }, [currentNetwork, showNotification, loadAutoTopUpConfigs]);
+
+        const handleAutoTopUpDelete = useCallback(async (address) => {
+            setOperationLoading({ type: 'autotopup', address });
+            try {
+                await api.deleteAutoTopUp(address, currentNetwork);
+                showNotification(`Auto top-up removed for ${address.slice(0, 10)}...`);
+                setAutoTopUpModal({ isOpen: false, app: null });
+                await loadAutoTopUpConfigs(currentNetwork);
+            } catch (error) {
+                showNotification(`Failed to remove auto top-up: ${error.message}`, 'error');
+            } finally {
+                setOperationLoading({ type: null, address: null });
+            }
+        }, [currentNetwork, showNotification, loadAutoTopUpConfigs]);
+
         return (
             <div className="min-h-screen" style={{background: 'linear-gradient(180deg, #001B44 0%, #002855 100%)'}}>
                 <Header
@@ -883,6 +1270,7 @@
                     autoRefreshEnabled={autoRefreshEnabled}
                     onToggleAutoRefresh={toggleAutoRefresh}
                     onNetworkClick={() => setNetworkModalOpen(true)}
+                    onStakeNewApp={handleOpenStakeNewApp}
                 />
 
                 <div className="max-w-8xl mx-auto px-6 py-8">
@@ -894,11 +1282,13 @@
                         onSelect={handleSelectAddress}
                         onUpstake={handleUpstake}
                         onFund={handleFund}
+                        onAutoTopUp={handleAutoTopUp}
                         thresholds={thresholds}
                         sortField={sortField}
                         sortDirection={sortDirection}
                         onSort={handleSort}
                         operationLoading={operationLoading}
+                        autoTopUpConfigs={autoTopUpConfigs}
                     />
 
                     <div className="mt-6 glass-card rounded-xl p-4">
@@ -919,6 +1309,25 @@
                     message={amountModal.message}
                     action={amountModal.action}
                     actionLoading={operationLoading.type !== null}
+                />
+
+                <StakeNewAppModal
+                    isOpen={stakeNewAppOpen}
+                    onClose={() => setStakeNewAppOpen(false)}
+                    onConfirm={handleStakeNewAppConfirm}
+                    services={services}
+                    servicesLoading={servicesLoading}
+                    actionLoading={operationLoading.type === 'stake'}
+                />
+
+                <AutoTopUpModal
+                    isOpen={autoTopUpModal.isOpen}
+                    onClose={() => setAutoTopUpModal({ isOpen: false, app: null })}
+                    onConfirm={handleAutoTopUpConfirm}
+                    onDelete={handleAutoTopUpDelete}
+                    app={autoTopUpModal.app}
+                    existingConfig={autoTopUpModal.app ? autoTopUpConfigs[autoTopUpModal.app.address] : null}
+                    actionLoading={operationLoading.type === 'autotopup'}
                 />
 
                 <NetworkSelectorModal
