@@ -9,11 +9,11 @@
     <script crossorigin="anonymous" src="https://unpkg.com/@babel/standalone@7.26.5/babel.min.js" integrity="sha384-SF03qAKhbEVbqj7hDewV6mk3wJJyzxf3nBCxNuF46+Sof8f1fx4Pes2gOVItRZn9"></script>
     <script src="https://cdn.tailwindcss.com/3.4.17"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap');
 
         body {
             margin: 0;
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
             background: #001B44;
             color: #ffffff;
         }
@@ -67,6 +67,32 @@
         .status-good {
             background: linear-gradient(135deg, #00D2A0 0%, #00D2FF 100%);
         }
+
+        h1, h2, .font-display {
+            font-family: 'Sora', sans-serif;
+        }
+
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+
+        .skeleton {
+            background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 75%);
+            background-size: 200% 100%;
+            animation: shimmer 1.5s infinite;
+        }
+
+        .skeleton-row {
+            height: 4rem;
+            margin-bottom: 0.5rem;
+            border-radius: 0.75rem;
+        }
+
+        .low-stake-alert {
+            border-color: rgba(255, 59, 59, 0.4);
+            background: linear-gradient(135deg, rgba(255, 59, 59, 0.1) 0%, rgba(255, 107, 0, 0.1) 100%);
+        }
     </style>
 </head>
 <body>
@@ -77,23 +103,33 @@
 
     const API_BASE_URL = window.location.origin + '/api';
 
+    const handleResponse = async (response, fallbackMessage) => {
+        if (!response.ok) {
+            let errorMessage = fallbackMessage;
+            try {
+                const body = await response.json();
+                if (body.error) errorMessage = body.error;
+                else if (body.message) errorMessage = body.message;
+            } catch {}
+            throw new Error(errorMessage);
+        }
+        return response.json();
+    };
+
     const api = {
         fetchApplications: async (network, forceRefresh = false) => {
             const url = `${API_BASE_URL}/applications?network=${network}${forceRefresh ? '&refresh=true' : ''}`;
             const response = await fetch(url);
-            if (!response.ok) throw new Error('Failed to fetch applications');
-            return response.json();
+            return handleResponse(response, 'Failed to fetch applications');
         },
         fetchApplication: async (address, network) => {
             const response = await fetch(`${API_BASE_URL}/applications/${address}?network=${network}`);
-            if (!response.ok) throw new Error('Failed to fetch application');
-            return response.json();
+            return handleResponse(response, 'Failed to fetch application');
         },
         fetchBank: async (network, forceRefresh = false) => {
             const url = `${API_BASE_URL}/bank?network=${network}${forceRefresh ? '&refresh=true' : ''}`;
             const response = await fetch(url);
-            if (!response.ok) throw new Error('Failed to fetch bank account');
-            return response.json();
+            return handleResponse(response, 'Failed to fetch bank account');
         },
         upstakeApplication: async (address, network, amount) => {
             const response = await fetch(`${API_BASE_URL}/applications/${address}/upstake?network=${network}`, {
@@ -101,8 +137,7 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ amount })
             });
-            if (!response.ok) throw new Error('Failed to upstake application');
-            return response.json();
+            return handleResponse(response, 'Failed to upstake application');
         },
         fundApplication: async (address, network, amount) => {
             const response = await fetch(`${API_BASE_URL}/applications/${address}/fund?network=${network}`, {
@@ -110,23 +145,19 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ amount })
             });
-            if (!response.ok) throw new Error('Failed to fund application');
-            return response.json();
+            return handleResponse(response, 'Failed to fund application');
         },
         fetchNetworks: async () => {
             const response = await fetch(`${API_BASE_URL}/networks`);
-            if (!response.ok) throw new Error('Failed to fetch networks');
-            return response.json();
+            return handleResponse(response, 'Failed to fetch networks');
         },
         fetchConfig: async () => {
             const response = await fetch(`${API_BASE_URL}/config`);
-            if (!response.ok) throw new Error('Failed to fetch config');
-            return response.json();
+            return handleResponse(response, 'Failed to fetch config');
         },
         fetchServices: async (network) => {
             const response = await fetch(`${API_BASE_URL}/services?network=${network}`);
-            if (!response.ok) throw new Error('Failed to fetch services');
-            return response.json();
+            return handleResponse(response, 'Failed to fetch services');
         },
         stakeNewApplication: async (network, address, serviceId, amount) => {
             const response = await fetch(`${API_BASE_URL}/applications/stake?network=${network}`, {
@@ -134,13 +165,11 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ address, service_id: serviceId, amount })
             });
-            if (!response.ok) throw new Error('Failed to stake application');
-            return response.json();
+            return handleResponse(response, 'Failed to stake application');
         },
         fetchAutoTopUp: async (network) => {
             const response = await fetch(`${API_BASE_URL}/autotopup?network=${network}`);
-            if (!response.ok) throw new Error('Failed to fetch auto-top-up configs');
-            return response.json();
+            return handleResponse(response, 'Failed to fetch auto-top-up configs');
         },
         setAutoTopUp: async (address, network, config) => {
             const response = await fetch(`${API_BASE_URL}/applications/${address}/autotopup?network=${network}`, {
@@ -148,20 +177,17 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(config)
             });
-            if (!response.ok) throw new Error('Failed to set auto-top-up config');
-            return response.json();
+            return handleResponse(response, 'Failed to set auto-top-up config');
         },
         deleteAutoTopUp: async (address, network) => {
             const response = await fetch(`${API_BASE_URL}/applications/${address}/autotopup?network=${network}`, {
                 method: 'DELETE'
             });
-            if (!response.ok) throw new Error('Failed to delete auto-top-up config');
-            return response.json();
+            return handleResponse(response, 'Failed to delete auto-top-up config');
         },
         fetchAutoTopUpEvents: async () => {
             const response = await fetch(`${API_BASE_URL}/autotopup/events`);
-            if (!response.ok) throw new Error('Failed to fetch auto-top-up events');
-            return response.json();
+            return handleResponse(response, 'Failed to fetch auto-top-up events');
         }
     };
 
@@ -257,6 +283,13 @@
         </svg>
     );
 
+    const XIcon = ({ size = 20 }) => (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+    );
+
     // Utilities
     const formatStake = (upokt) => {
         const pokt = upokt / 1000000;
@@ -297,13 +330,20 @@
         const [notification, setNotification] = useState(null);
         const timerRef = useRef(null);
 
+        const dismissNotification = useCallback(() => {
+            if (timerRef.current) clearTimeout(timerRef.current);
+            setNotification(null);
+        }, []);
+
         const showNotification = useCallback((message, type = 'success') => {
             if (timerRef.current) clearTimeout(timerRef.current);
             setNotification({ message, type });
-            timerRef.current = setTimeout(() => setNotification(null), 5000);
+            if (type !== 'error') {
+                timerRef.current = setTimeout(() => setNotification(null), 5000);
+            }
         }, []);
 
-        return { notification, showNotification };
+        return { notification, showNotification, dismissNotification };
     };
 
     const useApplications = (network, thresholds, showNotification) => {
@@ -416,14 +456,41 @@
         handlersRef.current = handlers;
 
         useEffect(() => {
-            const handleKeyPress = (e) => {
-                if (e.target.tagName === 'INPUT') return;
+            const handleKeyDown = (e) => {
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+                if (e.metaKey || e.ctrlKey || e.altKey) return;
                 const handler = handlersRef.current[e.key.toLowerCase()];
                 if (handler) handler();
             };
-            window.addEventListener('keypress', handleKeyPress);
-            return () => window.removeEventListener('keypress', handleKeyPress);
+            window.addEventListener('keydown', handleKeyDown);
+            return () => window.removeEventListener('keydown', handleKeyDown);
         }, []);
+    };
+
+    const useFocusTrap = (ref, isActive) => {
+        useEffect(() => {
+            if (!isActive || !ref.current) return;
+            const element = ref.current;
+            const getFocusable = () => element.querySelectorAll(
+                'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+            );
+            const handleTab = (e) => {
+                if (e.key !== 'Tab') return;
+                const focusable = getFocusable();
+                if (focusable.length === 0) return;
+                const first = focusable[0];
+                const last = focusable[focusable.length - 1];
+                if (e.shiftKey) {
+                    if (document.activeElement === first) { last.focus(); e.preventDefault(); }
+                } else {
+                    if (document.activeElement === last) { first.focus(); e.preventDefault(); }
+                }
+            };
+            const focusable = getFocusable();
+            if (focusable.length > 0) focusable[0].focus();
+            element.addEventListener('keydown', handleTab);
+            return () => element.removeEventListener('keydown', handleTab);
+        }, [isActive]);
     };
 
     // ErrorBoundary
@@ -464,9 +531,9 @@
 
     // Header Component
     const Header = ({ currentNetwork, onRefresh, loading, autoRefreshEnabled, onToggleAutoRefresh, onNetworkClick, onStakeNewApp }) => (
-        <div className="glass-card border-b border-white/10">
-            <div className="max-w-8xl mx-auto px-6 py-6">
-                <div className="flex items-center justify-between mb-6">
+        <header className="glass-card border-b border-white/10">
+            <div className="max-w-screen-2xl mx-auto px-6 py-6">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
                     <div className="flex items-center gap-4">
                         <h1 className="text-4xl font-black gradient-text">SAM</h1>
                         <span className="px-3 py-1 glass-card rounded-full text-sm font-medium">
@@ -479,7 +546,7 @@
                             </span>
                         )}
                     </div>
-                    <div className="flex items-center gap-3">
+                    <nav className="flex flex-wrap items-center gap-3" aria-label="Main actions">
                         <button
                             onClick={onStakeNewApp}
                             className="px-4 py-2 btn-primary rounded-lg font-medium transition-all flex items-center gap-2"
@@ -489,6 +556,7 @@
                         </button>
                         <button
                             onClick={onToggleAutoRefresh}
+                            aria-pressed={autoRefreshEnabled}
                             className={`px-4 py-2 rounded-lg font-medium transition-all ${
                                 autoRefreshEnabled ? 'btn-primary' : 'glass-card hover:bg-white/5'
                             }`}
@@ -498,6 +566,7 @@
                         <button
                             onClick={onRefresh}
                             disabled={loading}
+                            aria-label="Refresh data"
                             className="px-4 py-2 glass-card hover:bg-white/5 rounded-lg font-medium transition-all flex items-center gap-2 disabled:opacity-50"
                         >
                             {loading ? <Loader size={16} /> : <RefreshCw size={16} />}
@@ -505,15 +574,16 @@
                         </button>
                         <button
                             onClick={onNetworkClick}
+                            aria-label="Switch network"
                             className="px-4 py-2 glass-card hover:bg-white/5 rounded-lg font-medium transition-all"
                         >
                             Network (n)
                         </button>
-                    </div>
+                    </nav>
                 </div>
                 <p className="text-white/60 text-lg">Simple AppStakes Manager</p>
             </div>
-        </div>
+        </header>
     );
 
     // Stats Panel
@@ -560,11 +630,12 @@
                     </div>
                 </div>
 
-                <div className="gradient-card rounded-2xl p-6 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-[150px] h-[150px] rounded-full pointer-events-none blur-[40px]" style={heroStyle}></div>
+                <div className={`rounded-2xl p-6 relative overflow-hidden ${lowStakeCount > 0 ? 'low-stake-alert' : 'gradient-card'}`}>
+                    <div className="absolute top-0 right-0 w-[150px] h-[150px] rounded-full pointer-events-none blur-[40px]" style={lowStakeCount > 0 ? {background: 'radial-gradient(circle, rgba(255,59,59,0.3) 0%, transparent 70%)'} : heroStyle}></div>
                     <div className="relative z-10">
                         <p className="text-white/60 text-sm font-medium mb-2">Low Stake Apps</p>
-                        <p className="text-4xl font-black text-red-400">{lowStakeCount}</p>
+                        <p className={`text-4xl font-black ${lowStakeCount > 0 ? 'text-red-400' : 'text-white'}`}>{lowStakeCount}</p>
+                        {lowStakeCount > 0 && <p className="text-red-400/60 text-xs mt-1">Attention needed</p>}
                     </div>
                 </div>
             </div>
@@ -746,7 +817,7 @@
                         {status.toUpperCase()}
                     </span>
                 </td>
-                <td className="px-6 py-4">
+                <td className="px-6 py-4 hidden lg:table-cell">
                     <span className="text-sm font-mono text-white/60">{app.gateway}</span>
                 </td>
                 <td className="px-6 py-4">
@@ -755,6 +826,7 @@
                             onClick={(e) => { e.stopPropagation(); onAutoTopUp(app); }}
                             className={`p-2 glass-card hover:bg-white/10 rounded-lg transition-all ${hasAutoTopUp ? 'ring-1 ring-cyan-400/50' : ''}`}
                             title="Auto Top-Up"
+                            aria-label={`Configure auto top-up for ${app.address.slice(0, 10)}`}
                         >
                             <Repeat size={16} className={hasAutoTopUp ? 'text-cyan-400' : 'text-white/40'} />
                         </button>
@@ -763,6 +835,7 @@
                             disabled={isUpstaking}
                             className="p-2 glass-card hover:bg-white/10 rounded-lg transition-all disabled:opacity-50"
                             title="Upstake"
+                            aria-label={`Upstake ${app.address.slice(0, 10)}`}
                         >
                             {isUpstaking ? <Loader size={16} /> : <TrendingUp size={16} className="text-green-400" />}
                         </button>
@@ -771,6 +844,7 @@
                             disabled={isFunding}
                             className="p-2 glass-card hover:bg-white/10 rounded-lg transition-all disabled:opacity-50"
                             title="Fund"
+                            aria-label={`Fund ${app.address.slice(0, 10)}`}
                         >
                             {isFunding ? <Loader size={16} /> : <DollarSign size={16} className="text-blue-400" />}
                         </button>
@@ -780,42 +854,138 @@
         );
     };
 
+    // Skeleton Table (loading placeholder)
+    const SkeletonTable = () => (
+        <div className="glass-card rounded-2xl overflow-hidden p-6">
+            <div className="skeleton skeleton-row w-full mb-4" style={{height: '2rem', maxWidth: '12rem'}}></div>
+            {[...Array(5)].map((_, i) => (
+                <div key={i} className="skeleton skeleton-row w-full" style={{animationDelay: `${i * 0.1}s`}}></div>
+            ))}
+        </div>
+    );
+
+    // Mobile Application Card
+    const ApplicationCard = ({ app, onUpstake, onFund, onAutoTopUp, thresholds, operationLoading, hasAutoTopUp, autoTopUpConfig }) => {
+        const status = getStakeStatus(app.stake, thresholds);
+        const isUpstaking = operationLoading.type === 'upstake' && operationLoading.address === app.address;
+        const isFunding = operationLoading.type === 'fund' && operationLoading.address === app.address;
+
+        return (
+            <div className="glass-card rounded-xl p-4">
+                <div className="flex items-start justify-between mb-3">
+                    <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                            <span className="text-xs font-mono text-white/70 truncate">{app.address}</span>
+                            {hasAutoTopUp && (
+                                <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold gradient-blue text-white flex-shrink-0">AUTO</span>
+                            )}
+                        </div>
+                        <span className="text-xs text-white/50">{app.service_id}</span>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold text-white flex-shrink-0 ml-2 ${
+                        status === 'danger' ? 'status-danger' : status === 'warning' ? 'status-warning' : 'status-good'
+                    }`}>
+                        {status.toUpperCase()}
+                    </span>
+                </div>
+                <div className="flex items-end justify-between">
+                    <div>
+                        <div className="font-semibold text-white text-lg">{formatStake(app.stake)} <span className="text-xs text-white/40">POKT</span></div>
+                        <div className="text-xs text-white/40">Liquid: {formatStake(app.liquid_balance)}</div>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                        <button
+                            onClick={() => onAutoTopUp(app)}
+                            className={`p-1.5 glass-card hover:bg-white/10 rounded-lg transition-all ${hasAutoTopUp ? 'ring-1 ring-cyan-400/50' : ''}`}
+                            aria-label={`Configure auto top-up for ${app.address.slice(0, 10)}`}
+                        >
+                            <Repeat size={14} className={hasAutoTopUp ? 'text-cyan-400' : 'text-white/40'} />
+                        </button>
+                        <button
+                            onClick={() => onUpstake(app)}
+                            disabled={isUpstaking}
+                            className="p-1.5 glass-card hover:bg-white/10 rounded-lg transition-all disabled:opacity-50"
+                            aria-label={`Upstake ${app.address.slice(0, 10)}`}
+                        >
+                            {isUpstaking ? <Loader size={14} /> : <TrendingUp size={14} className="text-green-400" />}
+                        </button>
+                        <button
+                            onClick={() => onFund(app)}
+                            disabled={isFunding}
+                            className="p-1.5 glass-card hover:bg-white/10 rounded-lg transition-all disabled:opacity-50"
+                            aria-label={`Fund ${app.address.slice(0, 10)}`}
+                        >
+                            {isFunding ? <Loader size={14} /> : <DollarSign size={14} className="text-blue-400" />}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     // Applications Table
     const ApplicationsTable = ({ apps, selectedAddress, onSelect, onUpstake, onFund, onAutoTopUp, thresholds, sortField, sortDirection, onSort, operationLoading, autoTopUpConfigs }) => (
-        <div className="glass-card rounded-2xl overflow-hidden">
-            <table className="w-full">
-                <thead className="bg-white/5">
-                <tr>
-                    <SortableHeader field="address" currentField={sortField} direction={sortDirection} onSort={onSort}>
-                        Application Address
-                    </SortableHeader>
-                    <SortableHeader field="service_id" currentField={sortField} direction={sortDirection} onSort={onSort}>
-                        Service ID
-                    </SortableHeader>
-                    <SortableHeader field="stake" currentField={sortField} direction={sortDirection} onSort={onSort} align="right">
-                        Stake (POKT)
-                    </SortableHeader>
-                    <SortableHeader field="status" currentField={sortField} direction={sortDirection} onSort={onSort}>
-                        Status
-                    </SortableHeader>
-                    <th className="px-6 py-4 text-sm font-semibold text-white/60 text-left">Gateway</th>
-                    <th className="px-6 py-4 text-sm font-semibold text-white/60 text-right">Actions</th>
-                </tr>
-                </thead>
-                <tbody>
-                {apps.length === 0 ? (
+        <div>
+            {/* Desktop table */}
+            <div className="hidden lg:block glass-card rounded-2xl overflow-x-auto">
+                <table className="w-full">
+                    <thead className="bg-white/5">
                     <tr>
-                        <td colSpan="6" className="px-6 py-12 text-center text-white/40">
-                            No applications found
-                        </td>
+                        <SortableHeader field="address" currentField={sortField} direction={sortDirection} onSort={onSort}>
+                            Application Address
+                        </SortableHeader>
+                        <SortableHeader field="service_id" currentField={sortField} direction={sortDirection} onSort={onSort}>
+                            Service ID
+                        </SortableHeader>
+                        <SortableHeader field="stake" currentField={sortField} direction={sortDirection} onSort={onSort} align="right">
+                            Stake (POKT)
+                        </SortableHeader>
+                        <SortableHeader field="status" currentField={sortField} direction={sortDirection} onSort={onSort}>
+                            Status
+                        </SortableHeader>
+                        <th className="px-6 py-4 text-sm font-semibold text-white/60 text-left hidden lg:table-cell">Gateway</th>
+                        <th className="px-6 py-4 text-sm font-semibold text-white/60 text-right whitespace-nowrap">Actions</th>
                     </tr>
+                    </thead>
+                    <tbody>
+                    {apps.length === 0 ? (
+                        <tr>
+                            <td colSpan="6" className="px-6 py-12 text-center text-white/40">
+                                No applications found
+                            </td>
+                        </tr>
+                    ) : (
+                        apps.map((app) => (
+                            <ApplicationRow
+                                key={app.address}
+                                app={app}
+                                isSelected={selectedAddress === app.address}
+                                onSelect={onSelect}
+                                onUpstake={onUpstake}
+                                onFund={onFund}
+                                onAutoTopUp={onAutoTopUp}
+                                thresholds={thresholds}
+                                operationLoading={operationLoading}
+                                hasAutoTopUp={autoTopUpConfigs[app.address]?.enabled}
+                                autoTopUpConfig={autoTopUpConfigs[app.address]}
+                            />
+                        ))
+                    )}
+                    </tbody>
+                </table>
+            </div>
+
+            {/* Mobile card layout */}
+            <div className="lg:hidden space-y-3">
+                {apps.length === 0 ? (
+                    <div className="glass-card rounded-xl px-6 py-12 text-center text-white/40">
+                        No applications found
+                    </div>
                 ) : (
                     apps.map((app) => (
-                        <ApplicationRow
+                        <ApplicationCard
                             key={app.address}
                             app={app}
-                            isSelected={selectedAddress === app.address}
-                            onSelect={onSelect}
                             onUpstake={onUpstake}
                             onFund={onFund}
                             onAutoTopUp={onAutoTopUp}
@@ -826,8 +996,7 @@
                         />
                     ))
                 )}
-                </tbody>
-            </table>
+            </div>
         </div>
     );
 
@@ -835,6 +1004,9 @@
     const AmountInputModal = ({ isOpen, onClose, onConfirm, title, message, action, actionLoading }) => {
         const [amount, setAmount] = useState('');
         const inputRef = useRef(null);
+        const modalRef = useRef(null);
+
+        useFocusTrap(modalRef, isOpen);
 
         useEffect(() => {
             if (isOpen) {
@@ -863,9 +1035,9 @@
         };
 
         return (
-            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
-                <div className="glass-card rounded-2xl p-8 max-w-md w-full border-2 border-white/20" onClick={(e) => e.stopPropagation()}>
-                    <h2 className="text-2xl font-black gradient-text mb-4">{title}</h2>
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="amount-modal-title">
+                <div ref={modalRef} className="glass-card rounded-2xl p-8 max-w-md w-full border-2 border-white/20" onClick={(e) => e.stopPropagation()}>
+                    <h2 id="amount-modal-title" className="text-2xl font-black gradient-text mb-4">{title}</h2>
                     <p className="text-white/80 mb-6">{message}</p>
                     <form onSubmit={handleSubmit}>
                         <div className="mb-6">
@@ -912,6 +1084,10 @@
 
     // Network Selector Modal (replaces prompt())
     const NetworkSelectorModal = ({ isOpen, onClose, networks, currentNetwork, onSelect }) => {
+        const modalRef = useRef(null);
+
+        useFocusTrap(modalRef, isOpen);
+
         useEffect(() => {
             if (!isOpen) return;
             const handleKeyDown = (e) => {
@@ -924,9 +1100,9 @@
         if (!isOpen) return null;
 
         return (
-            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
-                <div className="glass-card rounded-2xl p-8 max-w-md w-full border-2 border-white/20" onClick={(e) => e.stopPropagation()}>
-                    <h2 className="text-2xl font-black gradient-text mb-6">Select Network</h2>
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="network-modal-title">
+                <div ref={modalRef} className="glass-card rounded-2xl p-8 max-w-md w-full border-2 border-white/20" onClick={(e) => e.stopPropagation()}>
+                    <h2 id="network-modal-title" className="text-2xl font-black gradient-text mb-6">Select Network</h2>
                     <div className="flex flex-col gap-3">
                         {networks.map((network) => (
                             <button
@@ -954,6 +1130,9 @@
         const [serviceId, setServiceId] = useState('');
         const [amount, setAmount] = useState('');
         const addressRef = useRef(null);
+        const modalRef = useRef(null);
+
+        useFocusTrap(modalRef, isOpen);
 
         useEffect(() => {
             if (isOpen) {
@@ -984,9 +1163,9 @@
         };
 
         return (
-            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
-                <div className="glass-card rounded-2xl p-8 max-w-md w-full border-2 border-white/20" onClick={(e) => e.stopPropagation()}>
-                    <h2 className="text-2xl font-black gradient-text mb-4">Stake New Application</h2>
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="stake-modal-title">
+                <div ref={modalRef} className="glass-card rounded-2xl p-8 max-w-md w-full border-2 border-white/20" onClick={(e) => e.stopPropagation()}>
+                    <h2 id="stake-modal-title" className="text-2xl font-black gradient-text mb-4">Stake New Application</h2>
                     <form onSubmit={handleSubmit}>
                         <div className="mb-4">
                             <label className="block text-sm text-white/60 mb-2">Application Address</label>
@@ -1061,6 +1240,10 @@
         const [enabled, setEnabled] = useState(true);
         const [triggerThreshold, setTriggerThreshold] = useState('');
         const [targetAmount, setTargetAmount] = useState('');
+        const [confirmingDelete, setConfirmingDelete] = useState(false);
+        const modalRef = useRef(null);
+
+        useFocusTrap(modalRef, isOpen);
 
         useEffect(() => {
             if (isOpen && existingConfig) {
@@ -1072,6 +1255,7 @@
                 setTriggerThreshold('');
                 setTargetAmount('');
             }
+            setConfirmingDelete(false);
         }, [isOpen, existingConfig]);
 
         useEffect(() => {
@@ -1096,16 +1280,27 @@
             }
         };
 
+        const handleDeleteClick = () => {
+            if (confirmingDelete) {
+                onDelete(app.address);
+            } else {
+                setConfirmingDelete(true);
+            }
+        };
+
         return (
-            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose}>
-                <div className="glass-card rounded-2xl p-8 max-w-md w-full border-2 border-white/20" onClick={(e) => e.stopPropagation()}>
-                    <h2 className="text-2xl font-black gradient-text mb-2">Auto Top-Up</h2>
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="autotopup-modal-title">
+                <div ref={modalRef} className="glass-card rounded-2xl p-8 max-w-md w-full border-2 border-white/20" onClick={(e) => e.stopPropagation()}>
+                    <h2 id="autotopup-modal-title" className="text-2xl font-black gradient-text mb-2">Auto Top-Up</h2>
                     <p className="text-white/60 text-sm mb-6 font-mono truncate">{app.address}</p>
                     <form onSubmit={handleSubmit}>
                         <div className="mb-4 flex items-center gap-3">
-                            <label className="text-sm text-white/60">Enable Auto Top-Up</label>
+                            <label id="auto-topup-toggle-label" className="text-sm text-white/60">Enable Auto Top-Up</label>
                             <button
                                 type="button"
+                                role="switch"
+                                aria-checked={enabled}
+                                aria-labelledby="auto-topup-toggle-label"
                                 onClick={() => setEnabled(!enabled)}
                                 className={`w-12 h-6 rounded-full transition-all relative ${enabled ? 'gradient-blue' : 'bg-white/20'}`}
                             >
@@ -1153,11 +1348,15 @@
                             {existingConfig && (
                                 <button
                                     type="button"
-                                    onClick={() => onDelete(app.address)}
+                                    onClick={handleDeleteClick}
                                     disabled={actionLoading}
-                                    className="px-6 py-3 rounded-xl font-bold transition-all text-red-400 glass-card hover:bg-red-400/10 disabled:opacity-50"
+                                    className={`px-6 py-3 rounded-xl font-bold transition-all disabled:opacity-50 ${
+                                        confirmingDelete
+                                            ? 'bg-red-500 text-white hover:bg-red-600'
+                                            : 'text-red-400 glass-card hover:bg-red-400/10'
+                                    }`}
                                 >
-                                    Remove
+                                    {confirmingDelete ? 'Confirm?' : 'Remove'}
                                 </button>
                             )}
                             <button
@@ -1175,14 +1374,19 @@
     };
 
     // Notification
-    const Notification = ({ message, type }) => (
-        <div className="fixed bottom-6 right-6 z-50 max-w-md">
+    const Notification = ({ message, type, onClose }) => (
+        <div className="fixed bottom-6 right-6 z-50 max-w-md" role="alert" aria-live={type === 'error' ? 'assertive' : 'polite'}>
             <div className={`flex items-start gap-3 px-6 py-4 rounded-xl shadow-2xl ${
                 type === 'success' ? 'gradient-blue' :
-                type === 'error' ? 'gradient-yellow' : 'glass-card'
+                type === 'error' ? 'bg-red-600/90 border border-red-500/50' : 'glass-card'
             }`}>
                 {type === 'success' ? <Check size={20} /> : <AlertCircle size={20} />}
-                <span className="text-sm font-medium">{message}</span>
+                <span className="text-sm font-medium flex-1">{message}</span>
+                {type === 'error' && onClose && (
+                    <button onClick={onClose} className="flex-shrink-0 hover:bg-white/10 rounded p-0.5 transition-all" aria-label="Dismiss notification">
+                        <XIcon size={16} />
+                    </button>
+                )}
             </div>
         </div>
     );
@@ -1207,7 +1411,7 @@
             danger_threshold: 1000000000
         });
 
-        const { notification, showNotification } = useNotification();
+        const { notification, showNotification, dismissNotification } = useNotification();
         const {
             apps, setApps, filteredApps, loading, setLoading,
             searchTerm, setSearchTerm, sortField, sortDirection,
@@ -1424,28 +1628,41 @@
                     onStakeNewApp={handleOpenStakeNewApp}
                 />
 
-                <div className="max-w-8xl mx-auto px-6 py-8">
-                    <StatsPanel apps={filteredApps} thresholds={thresholds} bankAccount={bankAccount} />
-                    <AutoTopUpEventsPanel
-                        events={autoTopUpEvents}
-                        loading={eventsLoading}
-                        onRefresh={loadAutoTopUpEvents}
-                    />
-                    <SearchBar value={searchTerm} onChange={setSearchTerm} />
-                    <ApplicationsTable
-                        apps={filteredApps}
-                        selectedAddress={selectedAddress}
-                        onSelect={handleSelectAddress}
-                        onUpstake={handleUpstake}
-                        onFund={handleFund}
-                        onAutoTopUp={handleAutoTopUp}
-                        thresholds={thresholds}
-                        sortField={sortField}
-                        sortDirection={sortDirection}
-                        onSort={handleSort}
-                        operationLoading={operationLoading}
-                        autoTopUpConfigs={autoTopUpConfigs}
-                    />
+                <main className="max-w-screen-2xl mx-auto px-6 py-8">
+                    {loading && filteredApps.length === 0 ? (
+                        <>
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                                {[...Array(4)].map((_, i) => (
+                                    <div key={i} className="skeleton rounded-2xl" style={{height: '7rem', animationDelay: `${i * 0.08}s`}}></div>
+                                ))}
+                            </div>
+                            <SkeletonTable />
+                        </>
+                    ) : (
+                        <>
+                            <StatsPanel apps={filteredApps} thresholds={thresholds} bankAccount={bankAccount} />
+                            <AutoTopUpEventsPanel
+                                events={autoTopUpEvents}
+                                loading={eventsLoading}
+                                onRefresh={loadAutoTopUpEvents}
+                            />
+                            <SearchBar value={searchTerm} onChange={setSearchTerm} />
+                            <ApplicationsTable
+                                apps={filteredApps}
+                                selectedAddress={selectedAddress}
+                                onSelect={handleSelectAddress}
+                                onUpstake={handleUpstake}
+                                onFund={handleFund}
+                                onAutoTopUp={handleAutoTopUp}
+                                thresholds={thresholds}
+                                sortField={sortField}
+                                sortDirection={sortDirection}
+                                onSort={handleSort}
+                                operationLoading={operationLoading}
+                                autoTopUpConfigs={autoTopUpConfigs}
+                            />
+                        </>
+                    )}
 
                     <div className="mt-6 glass-card rounded-xl p-4">
                         <div className="text-sm text-white/60">
@@ -1455,7 +1672,7 @@
                             <span className="ml-4">Connected to: <span className="text-cyan-400">{API_BASE_URL}</span></span>
                         </div>
                     </div>
-                </div>
+                </main>
 
                 <AmountInputModal
                     isOpen={amountModal.isOpen}
@@ -1495,7 +1712,7 @@
                 />
 
                 {notification && (
-                    <Notification message={notification.message} type={notification.type} />
+                    <Notification message={notification.message} type={notification.type} onClose={dismissNotification} />
                 )}
             </div>
         );

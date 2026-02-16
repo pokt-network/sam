@@ -4,7 +4,28 @@ All notable changes to SAM (Simple AppStakes Manager) are documented in this fil
 
 ## [Unreleased]
 
+### Changed
+
+- **Typography** — Replaced Inter with Sora (headings) and DM Sans (body) for a more distinctive fintech aesthetic
+- **Error notifications** — Error toasts now persist until manually dismissed (success toasts still auto-dismiss after 5s); errors use a red theme instead of orange
+- **API error messages** — Server-side error details are now surfaced to the user instead of generic "Failed to..." messages
+- **Auto top-up removal** — Delete button now requires a second click to confirm, preventing accidental removal
+- **Low-stake card** — Stats panel "Low Stake Apps" card now uses a red-tinted alert style when count > 0
+
 ### Added
+
+- **Mobile responsive layout** — Applications table collapses to a card-based layout on screens < 768px
+- **Loading skeletons** — Shimmer placeholder shown during initial data load instead of a blank page
+- **Modal focus traps** — Tab key is now trapped within open modals (WCAG 2.1 compliance)
+- **Accessibility improvements** — `aria-label` on icon-only buttons, `role="switch"` + `aria-checked` on toggle, `role="dialog"` + `aria-modal` on modals, `role="alert"` on notifications, semantic `<header>`, `<main>`, `<nav>` landmarks
+
+### Fixed
+
+- **`max-w-8xl` layout bug** — Replaced non-existent Tailwind class with `max-w-screen-2xl` to properly constrain content width
+- **Deprecated `keypress` event** — Keyboard shortcuts now use `keydown`, which fires consistently across all browsers
+- **Keyboard shortcuts in form fields** — Shortcuts are now suppressed when typing in inputs, selects, or textareas
+
+### Added (prior)
 
 - **Stake new application** — Stake a new app for any on-chain service directly from the UI (`POST /api/applications/stake`)
 - **Services endpoint** — Query available services on a network (`GET /api/services?network=`)
