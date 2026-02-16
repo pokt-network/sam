@@ -107,16 +107,25 @@ func SaveApplicationAddress(configPath, network, address string) error {
 	// State machine to find the correct insertion point
 	inTargetNetwork := false
 	inApplications := false
+	networkIndent := -1
 	insertIdx := -1
 
-	for i, line := range lines {
+	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
+		indent := len(line) - len(strings.TrimLeft(line, " \t"))
 
 		// Detect network header (e.g. "    pocket:" under "networks:")
-		if !strings.HasPrefix(trimmed, "#") && strings.HasSuffix(trimmed, ":") && !strings.Contains(trimmed, " ") {
+		// Only check when not already inside the target network, and require
+		// the line to be a bare key (ends with ":", no spaces in key name).
+		if !inTargetNetwork && !strings.HasPrefix(trimmed, "#") && strings.HasSuffix(trimmed, ":") && !strings.Contains(trimmed, " ") {
 			name := strings.TrimSuffix(trimmed, ":")
-			inTargetNetwork = (name == network)
-			inApplications = false
+			if name == network {
+				inTargetNetwork = true
+				networkIndent = indent
+			}
+		} else if inTargetNetwork && !inApplications && trimmed != "" && !strings.HasPrefix(trimmed, "#") && indent <= networkIndent {
+			// We've left the target network block (hit a sibling or parent key)
+			inTargetNetwork = false
 		}
 
 		// Detect "applications:" within the target network
@@ -128,7 +137,7 @@ func SaveApplicationAddress(configPath, network, address string) error {
 
 		// While in the applications list, track the last "- pokt1..." entry
 		if inApplications {
-			if strings.HasPrefix(trimmed, "- pokt1") {
+			if strings.HasPrefix(trimmed, "- pokt1") || strings.HasPrefix(trimmed, "- ") && strings.Contains(trimmed, "pokt1") {
 				insertIdx = len(result)
 				result = append(result, line)
 				continue
@@ -145,7 +154,6 @@ func SaveApplicationAddress(configPath, network, address string) error {
 		}
 
 		result = append(result, line)
-		_ = i
 	}
 
 	if insertIdx == -1 {
