@@ -149,7 +149,7 @@ func (c *Client) QueryApplication(address, apiEndpoint, network string) (*models
 
 // QueryServices returns available services on the network.
 func (c *Client) QueryServices(apiEndpoint string) ([]models.ServiceInfo, error) {
-	url := fmt.Sprintf("%s/pokt-network/poktroll/service/all_services", apiEndpoint)
+	url := fmt.Sprintf("%s/pokt-network/poktroll/service/service", apiEndpoint)
 	c.Logger.Debug("querying services", "url", url)
 
 	resp, err := c.HTTP.Get(url)
