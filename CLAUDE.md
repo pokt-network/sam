@@ -24,14 +24,15 @@ Run with custom port: `PORT=8080 ./sam` (default: 9999)
 
 ## Architecture
 
-**Monolithic single-file backend** (`cmd/web/main.go`, ~780 lines) organized in sections:
-1. **Models** — Config, Application, BankAccount, StakeRequest, TransactionResponse, API response structs
-2. **Global State** — In-memory caches (`appCache`, `bankCache`) with 1-minute TTL, keyed by network name
-3. **Configuration** — Loads `config.yaml` (networks, thresholds, keyring settings)
-4. **pocketd Helpers** — Shells out to `pocketd` CLI for upstake/fund transactions
-5. **API Query Functions** — Direct HTTP calls to Pocket Network REST API endpoints (no CLI for reads)
-6. **HTTP Handlers** — Gorilla Mux routes under `/api` prefix
-7. **Router Setup** — CORS-enabled, serves `web/index.html` at root
+**Backend** organized into internal packages:
+- `cmd/web/main.go` — Entry point, wiring, CORS, graceful shutdown
+- `internal/handler/` — HTTP handlers and route registration
+- `internal/pocket/` — Pocket Network API client and pocketd CLI executor
+- `internal/config/` — YAML config loading, validation, and persistence
+- `internal/autotopup/` — Auto top-up config store (JSON) and background worker
+- `internal/cache/` — Generic in-memory cache with TTL
+- `internal/validate/` — Input validation
+- `internal/models/` — Shared data types
 
 **Frontend** (`web/index.html`) — React 18 SPA using Babel standalone for in-browser JSX transpilation, styled with TailwindCSS via CDN.
 
@@ -41,9 +42,15 @@ Run with custom port: `PORT=8080 ./sam` (default: 9999)
 |--------|------|-------------|
 | GET | `/api/applications?network=` | List apps (cached) |
 | GET | `/api/applications/{address}?network=` | Single app details |
+| POST | `/api/applications/stake?network=` | Stake a new application |
 | POST | `/api/applications/{address}/upstake` | Increase app stake |
 | POST | `/api/applications/{address}/fund` | Transfer POKT to app |
+| PUT | `/api/applications/{address}/autotopup?network=` | Set auto top-up config |
+| DELETE | `/api/applications/{address}/autotopup?network=` | Remove auto top-up config |
+| GET | `/api/autotopup?network=` | List auto top-up configs |
+| GET | `/api/autotopup/events` | Recent auto top-up events |
 | GET | `/api/bank?network=` | Bank account balance (cached) |
+| GET | `/api/services?network=` | Available services on network |
 | GET | `/api/networks` | Configured networks |
 | GET | `/api/config` | Thresholds and network config |
 | GET | `/health` | Health check |
@@ -56,7 +63,7 @@ Query param `?refresh=true` bypasses cache on read endpoints.
 
 ## External Dependencies
 
-- **Runtime:** `pocketd` binary in PATH (required only for write operations: upstake/fund)
+- **Runtime:** `pocketd` binary in PATH (required only for write operations: stake/upstake/fund)
 - **Go deps:** gorilla/mux, rs/cors, gopkg.in/yaml.v3
 - **Frontend:** React 18, TailwindCSS, Babel standalone (all via CDN)
 
@@ -66,4 +73,7 @@ Query param `?refresh=true` bypasses cache on read endpoints.
 - Application data is fetched in parallel using goroutines
 - Cache is per-network; invalidated after 1 minute or on `?refresh=true`
 - All amounts in the backend use uPOKT (int64); frontend converts to POKT for display
-- No database — all state comes from the blockchain via API/CLI
+- No database — blockchain state via API/CLI, auto top-up configs in `autotopup.json`
+- New staked apps are persisted to `config.yaml` via targeted line insertion (preserves comments/formatting)
+- Auto top-up worker runs every 5 minutes; uses fund-then-upstake sequence from bank account
+- Smart funding: worker skips the fund step if app's liquid balance already covers the needed amount

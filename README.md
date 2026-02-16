@@ -19,7 +19,9 @@ A lightweight web application for monitoring and managing [Pocket Network](https
 
 - **Dashboard** — View all application stakes, balances, and status at a glance
 - **Multi-network** — Manage applications across multiple Pocket Network chains
+- **Stake new apps** — Stake a new application for any on-chain service directly from the UI
 - **Upstake & Fund** — Increase application stakes or send POKT directly from the UI
+- **Auto top-up** — Automatically fund and upstake applications when their stake drops below a configurable threshold
 - **Auto-refresh** — Optional 60-second polling with manual refresh and keyboard shortcuts
 - **Status indicators** — Configurable warning/danger thresholds for stake levels
 - **Single binary** — No separate frontend build step; React SPA served from the Go server
@@ -122,6 +124,31 @@ PORT=8080 ./sam
 | `r` | Refresh data |
 | `n` | Switch network |
 
+### Staking a New Application
+
+1. Click **"Stake New App"** in the header
+2. Enter the application address (must already exist in the keyring)
+3. Select a service from the dropdown (services are fetched from the network)
+4. Enter the stake amount in POKT
+5. Confirm — the application will be staked on-chain and automatically added to `config.yaml` for monitoring
+
+### Auto Top-Up
+
+Auto top-up automatically maintains application stakes above a minimum threshold by funding and upstaking from the bank account.
+
+1. Click the cycle icon (↻) next to any application in the table
+2. Set the **trigger threshold** — when stake falls below this value, a top-up is triggered
+3. Set the **target amount** — stake will be increased to this level
+4. Enable the toggle and save
+
+The background worker checks all enabled applications every 5 minutes. When a top-up is triggered:
+
+1. The worker queries the app's current stake and liquid balance
+2. If the liquid balance doesn't cover the needed amount, the difference is funded from the bank
+3. The app's stake is increased to the target amount via upstake
+
+Auto top-up configs are persisted in `autotopup.json` and survive server restarts. Recent top-up events can be viewed via the `/api/autotopup/events` endpoint.
+
 ## API
 
 All endpoints are prefixed with `/api` unless noted.
@@ -130,9 +157,15 @@ All endpoints are prefixed with `/api` unless noted.
 |--------|------|-------------|
 | `GET` | `/api/applications?network=` | List all monitored applications |
 | `GET` | `/api/applications/{address}?network=` | Single application details |
+| `POST` | `/api/applications/stake?network=` | Stake a new application |
 | `POST` | `/api/applications/{address}/upstake?network=` | Increase application stake |
 | `POST` | `/api/applications/{address}/fund?network=` | Send POKT to application |
+| `PUT` | `/api/applications/{address}/autotopup?network=` | Configure auto top-up for an app |
+| `DELETE` | `/api/applications/{address}/autotopup?network=` | Remove auto top-up config |
+| `GET` | `/api/autotopup?network=` | List all auto top-up configs |
+| `GET` | `/api/autotopup/events` | Recent auto top-up activity log |
 | `GET` | `/api/bank?network=` | Bank account balance |
+| `GET` | `/api/services?network=` | Available services on the network |
 | `GET` | `/api/networks` | Configured network names |
 | `GET` | `/api/config` | Threshold configuration |
 | `GET` | `/health` | Health check |
@@ -145,14 +178,31 @@ Add `?refresh=true` to any GET endpoint to bypass the 1-minute cache.
 { "amount": 100.5 }
 ```
 
-Amount is in POKT (not uPOKT).
+#### POST body (stake new application)
+
+```json
+{ "address": "pokt1abc...", "service_id": "anvil", "amount": 100 }
+```
+
+#### PUT body (auto top-up)
+
+```json
+{ "enabled": true, "trigger_threshold": 1000, "target_amount": 5000 }
+```
+
+`trigger_threshold` and `target_amount` are in POKT. The backend converts to uPOKT. `target_amount` must be greater than `trigger_threshold`.
+
+All amounts in request bodies are in POKT (not uPOKT).
 
 ## Architecture
 
 ```
 cmd/web/main.go              → Entry point, server setup, CORS, graceful shutdown
 internal/
-├── config/config.go          → YAML config loading and validation
+├── autotopup/
+│   ├── store.go              → Auto top-up config persistence (JSON file)
+│   └── worker.go             → Background worker for periodic fund + upstake
+├── config/config.go          → YAML config loading, validation, and persistence
 ├── handler/
 │   ├── handler.go            → HTTP handlers (REST endpoints)
 │   ├── routes.go             → Route registration
@@ -160,7 +210,7 @@ internal/
 ├── pocket/
 │   ├── client.go             → Read-only HTTP queries to Pocket Network API
 │   ├── pocketd.go            → pocketd CLI executor for write transactions
-│   └── transactions.go       → Upstake and fund transaction logic
+│   └── transactions.go       → Stake, upstake, and fund transaction logic
 ├── validate/validate.go      → Input validation (addresses, amounts, service IDs)
 ├── cache/cache.go            → Generic in-memory cache with TTL
 └── models/models.go          → Shared data types
@@ -172,7 +222,9 @@ web/index.html                → React 18 SPA (Babel + TailwindCSS via CDN)
 - Write operations shell out to the `pocketd` CLI binary
 - Application data is fetched in parallel using goroutines
 - In-memory cache per network with 1-minute TTL
-- No database — all state comes from the blockchain
+- Auto top-up configs stored in `autotopup.json` (no database required)
+- Background worker checks stakes every 5 minutes and performs fund + upstake as needed
+- New applications staked from the UI are automatically added to `config.yaml`
 
 ## Running the Tests
 

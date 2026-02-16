@@ -4,6 +4,9 @@
 #   cp config.yaml.example config.yaml
 #
 # --NOTE-- All keys must exist in the keyring and be accessible without a password
+#
+# Auto top-up settings are stored separately in autotopup.json (auto-created).
+# New applications staked from the UI are automatically appended to this file.
 
 config:
   keyring-backend: test
