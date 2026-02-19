@@ -20,10 +20,10 @@ RUN apk add --no-cache curl && \
     ARCH=${TARGETARCH} && \
     if [ "$ARCH" = "amd64" ]; then ARCH="amd64"; fi && \
     if [ "$ARCH" = "arm64" ]; then ARCH="arm64"; fi && \
-    curl -fSL "https://github.com/pokt-network/poktroll/releases/download/${POCKETD_VERSION}/poktroll_linux_${ARCH}.tar.gz" \
-      -o /tmp/poktroll.tar.gz && \
-    tar -xzf /tmp/poktroll.tar.gz -C /tmp && \
-    mv /tmp/poktrolld /usr/local/bin/pocketd && \
+    curl -fSL "https://github.com/pokt-network/poktroll/releases/download/${POCKETD_VERSION}/pocket_linux_${ARCH}.tar.gz" \
+      -o /tmp/pocket.tar.gz && \
+    tar -xzf /tmp/pocket.tar.gz -C /tmp && \
+    mv /tmp/pocketd /usr/local/bin/pocketd && \
     chmod +x /usr/local/bin/pocketd
 
 # Stage 3: Runtime image

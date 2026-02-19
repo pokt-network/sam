@@ -32,6 +32,7 @@ All notable changes to SAM (Simple AppStakes Manager) are documented in this fil
 
 ### Fixed
 
+- **Docker build failing** — Corrected pocketd download URL and binary name in Dockerfile (asset was renamed from `poktroll_*` to `pocket_*` and binary from `poktrolld` to `pocketd`)
 - **`max-w-8xl` layout bug** — Replaced non-existent Tailwind class with `max-w-screen-2xl` to properly constrain content width
 - **Deprecated `keypress` event** — Keyboard shortcuts now use `keydown`, which fires consistently across all browsers
 - **Keyboard shortcuts in form fields** — Shortcuts are now suppressed when typing in inputs, selects, or textareas
