@@ -86,7 +86,14 @@ type ServiceInfo struct {
 
 // APIServicesResponse is the response from the services query endpoint.
 type APIServicesResponse struct {
-	Service []APIServiceEntry `json:"service"`
+	Service    []APIServiceEntry `json:"service"`
+	Pagination *Pagination       `json:"pagination"`
+}
+
+// Pagination represents Cosmos SDK pagination metadata.
+type Pagination struct {
+	NextKey *string `json:"next_key"`
+	Total   string  `json:"total"`
 }
 
 // APIServiceEntry represents a single service from the API.

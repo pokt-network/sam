@@ -34,6 +34,7 @@ All notable changes to SAM (Simple AppStakes Manager) are documented in this fil
 
 ### Fixed
 
+- **Incomplete services list** — Services query now paginates through all API pages instead of returning only the first page
 - **Docker build failing** — Corrected pocketd download URL and binary name in Dockerfile (asset was renamed from `poktroll_*` to `pocket_*` and binary from `poktrolld` to `pocketd`)
 - **`max-w-8xl` layout bug** — Replaced non-existent Tailwind class with `max-w-screen-2xl` to properly constrain content width
 - **Deprecated `keypress` event** — Keyboard shortcuts now use `keydown`, which fires consistently across all browsers

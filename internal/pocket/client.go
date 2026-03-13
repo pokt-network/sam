@@ -147,38 +147,52 @@ func (c *Client) QueryApplication(address, apiEndpoint, network string) (*models
 	return app, nil
 }
 
-// QueryServices returns available services on the network.
+// QueryServices returns all available services on the network, paginating through all pages.
 func (c *Client) QueryServices(apiEndpoint string) ([]models.ServiceInfo, error) {
-	url := fmt.Sprintf("%s/pokt-network/poktroll/service/service", apiEndpoint)
-	c.Logger.Debug("querying services", "url", url)
+	baseURL := fmt.Sprintf("%s/pokt-network/poktroll/service/service", apiEndpoint)
+	var services []models.ServiceInfo
+	nextKey := ""
 
-	resp, err := c.HTTP.Get(url)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query services API: %w", err)
-	}
-	defer resp.Body.Close()
+	for {
+		reqURL := baseURL
+		if nextKey != "" {
+			reqURL = fmt.Sprintf("%s?pagination.key=%s", baseURL, nextKey)
+		}
+		c.Logger.Debug("querying services", "url", reqURL)
 
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
-		return nil, fmt.Errorf("services API returned status %d: %s", resp.StatusCode, string(body))
-	}
+		resp, err := c.HTTP.Get(reqURL)
+		if err != nil {
+			return nil, fmt.Errorf("failed to query services API: %w", err)
+		}
 
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
-	if err != nil {
-		return nil, fmt.Errorf("failed to read services response: %w", err)
-	}
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
+			resp.Body.Close()
+			return nil, fmt.Errorf("services API returned status %d: %s", resp.StatusCode, string(body))
+		}
 
-	var apiResp models.APIServicesResponse
-	if err := json.Unmarshal(body, &apiResp); err != nil {
-		return nil, fmt.Errorf("failed to parse services response: %w", err)
-	}
+		body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
+		resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read services response: %w", err)
+		}
 
-	services := make([]models.ServiceInfo, 0, len(apiResp.Service))
-	for _, s := range apiResp.Service {
-		services = append(services, models.ServiceInfo{
-			ID:   s.ID,
-			Name: s.Name,
-		})
+		var apiResp models.APIServicesResponse
+		if err := json.Unmarshal(body, &apiResp); err != nil {
+			return nil, fmt.Errorf("failed to parse services response: %w", err)
+		}
+
+		for _, s := range apiResp.Service {
+			services = append(services, models.ServiceInfo{
+				ID:   s.ID,
+				Name: s.Name,
+			})
+		}
+
+		if apiResp.Pagination == nil || apiResp.Pagination.NextKey == nil || *apiResp.Pagination.NextKey == "" {
+			break
+		}
+		nextKey = *apiResp.Pagination.NextKey
 	}
 
 	return services, nil
