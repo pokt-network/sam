@@ -262,6 +262,52 @@ func (s *Server) handleFund(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, result)
 }
 
+func (s *Server) handleDelegate(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	address := vars["address"]
+
+	if err := validate.Address(address); err != nil {
+		respondWithError(w, http.StatusBadRequest, "invalid address format")
+		return
+	}
+
+	network := r.URL.Query().Get("network")
+	if network == "" {
+		network = "pocket"
+	}
+
+	networkConfig, ok := s.Config.Config.Networks[network]
+	if !ok {
+		respondWithError(w, http.StatusBadRequest, "invalid network")
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 1024)
+	var req models.DelegateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondWithError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if err := validate.Address(req.GatewayAddress); err != nil {
+		respondWithError(w, http.StatusBadRequest, "invalid gateway address format")
+		return
+	}
+
+	s.Logger.Info("delegating", "address", address, "gateway", req.GatewayAddress)
+
+	result, err := s.Executor.DelegateToGateway(address, req.GatewayAddress, network, networkConfig.RPCEndpoint)
+	if err != nil {
+		s.Logger.Error("delegate error", "error", err)
+		respondWithError(w, http.StatusInternalServerError, "delegate operation failed")
+		return
+	}
+
+	s.AppCache.Delete(network)
+
+	respondWithJSON(w, http.StatusOK, result)
+}
+
 func (s *Server) handleGetServices(w http.ResponseWriter, r *http.Request) {
 	network := r.URL.Query().Get("network")
 	if network == "" {
@@ -455,10 +501,15 @@ func (s *Server) handleGetNetworks(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
-	// Only expose thresholds — network names are available via /api/networks.
+	// Expose thresholds and per-network gateway lists.
 	// Do NOT expose full NetworkConfig (RPC/API endpoints, bank/app addresses).
+	gateways := make(map[string][]string, len(s.Config.Config.Networks))
+	for name, net := range s.Config.Config.Networks {
+		gateways[name] = net.Gateways
+	}
 	respondWithJSON(w, http.StatusOK, map[string]interface{}{
 		"thresholds": s.Config.Config.Thresholds,
+		"gateways":   gateways,
 	})
 }
 

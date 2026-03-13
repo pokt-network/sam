@@ -66,6 +66,11 @@ type Service struct {
 	Name string `json:"name"`
 }
 
+// DelegateRequest is the JSON body for delegating an app to a gateway.
+type DelegateRequest struct {
+	GatewayAddress string `json:"gateway_address"`
+}
+
 // NewStakeRequest is the JSON body for staking a new application.
 type NewStakeRequest struct {
 	Address   string  `json:"address"`

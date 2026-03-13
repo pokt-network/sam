@@ -168,6 +168,46 @@ func (e *Executor) UpstakeApplication(appAddress, bankAddress, network string, a
 	return &models.TransactionResponse{Success: true, Message: "Transaction submitted"}, nil
 }
 
+// DelegateToGateway delegates an application to a gateway.
+func (e *Executor) DelegateToGateway(appAddress, gatewayAddress, network, rpcEndpoint string) (*models.TransactionResponse, error) {
+	e.Logger.Info("delegating to gateway", "app", appAddress, "gateway", gatewayAddress)
+
+	args := []string{
+		"tx", "application", "delegate-to-gateway",
+		gatewayAddress,
+		"--from", appAddress,
+		"--node", rpcEndpoint,
+		"--chain-id", network,
+		"--yes",
+		"--gas=auto",
+		"--fees=1upokt",
+		"--output", "json",
+	}
+
+	if e.Config.Config.KeyringBackend != "" {
+		args = append(args, "--keyring-backend", e.Config.Config.KeyringBackend)
+	}
+
+	e.Logger.Debug("delegate command", "args", args)
+
+	output, err := e.Run(args...)
+	if err != nil {
+		e.Logger.Error("delegate command failed", "error", err)
+		return &models.TransactionResponse{
+			Success: false,
+			Message: "delegate transaction failed",
+		}, nil
+	}
+
+	e.Logger.Info("delegate transaction submitted", "output", output)
+
+	if txhash := parseTxHash(output); txhash != "" {
+		return &models.TransactionResponse{TxHash: txhash, Success: true}, nil
+	}
+
+	return &models.TransactionResponse{Success: true, Message: "Transaction submitted"}, nil
+}
+
 // FundApplication sends POKT from the bank to an application address.
 func (e *Executor) FundApplication(appAddress, bankAddress, network string, amount int64, rpcEndpoint string) (*models.TransactionResponse, error) {
 	amountStr := fmt.Sprintf("%dupokt", amount)

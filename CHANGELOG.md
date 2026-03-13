@@ -6,6 +6,8 @@ All notable changes to SAM (Simple AppStakes Manager) are documented in this fil
 
 ### Added
 
+- **Delegate to gateway** — Delegate an application to a gateway directly from the UI (`POST /api/applications/{address}/delegate`); gateway dropdown populated from `config.yaml`
+
 - **Docker support** — Multi-stage Dockerfile with pocketd bundled, docker-compose.yml for local dev
 - **Helm chart** — Full Kubernetes deployment chart (`charts/sam/`) with ConfigMap, PVC, ingress, health probes
 - **GitHub Actions CI** — Runs vet, test, build, Docker build, and Helm lint on push/PR

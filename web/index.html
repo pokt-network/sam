@@ -147,6 +147,14 @@
             });
             return handleResponse(response, 'Failed to fund application');
         },
+        delegateApplication: async (address, network, gatewayAddress) => {
+            const response = await fetch(`${API_BASE_URL}/applications/${address}/delegate?network=${network}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ gateway_address: gatewayAddress })
+            });
+            return handleResponse(response, 'Failed to delegate application');
+        },
         fetchNetworks: async () => {
             const response = await fetch(`${API_BASE_URL}/networks`);
             return handleResponse(response, 'Failed to fetch networks');
@@ -287,6 +295,13 @@
         <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <line x1="18" y1="6" x2="6" y2="18"></line>
             <line x1="6" y1="6" x2="18" y2="18"></line>
+        </svg>
+    );
+
+    const LinkIcon = ({ size = 20 }) => (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
         </svg>
     );
 
@@ -774,10 +789,11 @@
     };
 
     // Application Row
-    const ApplicationRow = ({ app, isSelected, onSelect, onUpstake, onFund, onAutoTopUp, thresholds, operationLoading, hasAutoTopUp, autoTopUpConfig }) => {
+    const ApplicationRow = ({ app, isSelected, onSelect, onUpstake, onFund, onDelegate, onAutoTopUp, thresholds, operationLoading, hasAutoTopUp, autoTopUpConfig }) => {
         const status = getStakeStatus(app.stake, thresholds);
         const isUpstaking = operationLoading.type === 'upstake' && operationLoading.address === app.address;
         const isFunding = operationLoading.type === 'fund' && operationLoading.address === app.address;
+        const isDelegating = operationLoading.type === 'delegate' && operationLoading.address === app.address;
 
         return (
             <tr
@@ -848,6 +864,15 @@
                         >
                             {isFunding ? <Loader size={16} /> : <DollarSign size={16} className="text-blue-400" />}
                         </button>
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onDelegate(app); }}
+                            disabled={isDelegating}
+                            className="p-2 glass-card hover:bg-white/10 rounded-lg transition-all disabled:opacity-50"
+                            title="Delegate to Gateway"
+                            aria-label={`Delegate ${app.address.slice(0, 10)} to gateway`}
+                        >
+                            {isDelegating ? <Loader size={16} /> : <LinkIcon size={16} className="text-purple-400" />}
+                        </button>
                     </div>
                 </td>
             </tr>
@@ -865,10 +890,11 @@
     );
 
     // Mobile Application Card
-    const ApplicationCard = ({ app, onUpstake, onFund, onAutoTopUp, thresholds, operationLoading, hasAutoTopUp, autoTopUpConfig }) => {
+    const ApplicationCard = ({ app, onUpstake, onFund, onDelegate, onAutoTopUp, thresholds, operationLoading, hasAutoTopUp, autoTopUpConfig }) => {
         const status = getStakeStatus(app.stake, thresholds);
         const isUpstaking = operationLoading.type === 'upstake' && operationLoading.address === app.address;
         const isFunding = operationLoading.type === 'fund' && operationLoading.address === app.address;
+        const isDelegating = operationLoading.type === 'delegate' && operationLoading.address === app.address;
 
         return (
             <div className="glass-card rounded-xl p-4">
@@ -917,6 +943,14 @@
                         >
                             {isFunding ? <Loader size={14} /> : <DollarSign size={14} className="text-blue-400" />}
                         </button>
+                        <button
+                            onClick={() => onDelegate(app)}
+                            disabled={isDelegating}
+                            className="p-1.5 glass-card hover:bg-white/10 rounded-lg transition-all disabled:opacity-50"
+                            aria-label={`Delegate ${app.address.slice(0, 10)} to gateway`}
+                        >
+                            {isDelegating ? <Loader size={14} /> : <LinkIcon size={14} className="text-purple-400" />}
+                        </button>
                     </div>
                 </div>
             </div>
@@ -924,7 +958,7 @@
     };
 
     // Applications Table
-    const ApplicationsTable = ({ apps, selectedAddress, onSelect, onUpstake, onFund, onAutoTopUp, thresholds, sortField, sortDirection, onSort, operationLoading, autoTopUpConfigs }) => (
+    const ApplicationsTable = ({ apps, selectedAddress, onSelect, onUpstake, onFund, onDelegate, onAutoTopUp, thresholds, sortField, sortDirection, onSort, operationLoading, autoTopUpConfigs }) => (
         <div>
             {/* Desktop table */}
             <div className="hidden lg:block glass-card rounded-2xl overflow-x-auto">
@@ -963,6 +997,7 @@
                                 onSelect={onSelect}
                                 onUpstake={onUpstake}
                                 onFund={onFund}
+                                onDelegate={onDelegate}
                                 onAutoTopUp={onAutoTopUp}
                                 thresholds={thresholds}
                                 operationLoading={operationLoading}
@@ -988,6 +1023,7 @@
                             app={app}
                             onUpstake={onUpstake}
                             onFund={onFund}
+                            onDelegate={onDelegate}
                             onAutoTopUp={onAutoTopUp}
                             thresholds={thresholds}
                             operationLoading={operationLoading}
@@ -1067,6 +1103,91 @@
                             >
                                 {actionLoading && <Loader size={16} />}
                                 Confirm {action}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                className="flex-1 px-6 py-3 glass-card hover:bg-white/10 rounded-xl font-bold transition-all"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        );
+    };
+
+    // Delegate to Gateway Modal
+    const DelegateModal = ({ isOpen, onClose, onConfirm, app, gateways, actionLoading }) => {
+        const [selectedGateway, setSelectedGateway] = useState('');
+        const modalRef = useRef(null);
+
+        useFocusTrap(modalRef, isOpen);
+
+        useEffect(() => {
+            if (isOpen && gateways.length === 1) {
+                setSelectedGateway(gateways[0]);
+            } else if (isOpen) {
+                setSelectedGateway('');
+            }
+        }, [isOpen, gateways]);
+
+        useEffect(() => {
+            if (!isOpen) return;
+            const handleKeyDown = (e) => {
+                if (e.key === 'Escape') onClose();
+            };
+            window.addEventListener('keydown', handleKeyDown);
+            return () => window.removeEventListener('keydown', handleKeyDown);
+        }, [isOpen, onClose]);
+
+        if (!isOpen || !app) return null;
+
+        const handleSubmit = (e) => {
+            e.preventDefault();
+            if (selectedGateway && !actionLoading) onConfirm(app.address, selectedGateway);
+        };
+
+        return (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="delegate-modal-title">
+                <div ref={modalRef} className="glass-card rounded-2xl p-8 max-w-md w-full border-2 border-white/20" onClick={(e) => e.stopPropagation()}>
+                    <h2 id="delegate-modal-title" className="text-2xl font-black gradient-text mb-4">Delegate to Gateway</h2>
+                    <p className="text-white/80 mb-6">Delegate <span className="font-mono text-xs">{app.address}</span> to a gateway.</p>
+                    <form onSubmit={handleSubmit}>
+                        <div className="mb-6">
+                            <label className="block text-sm text-white/60 mb-2">Gateway</label>
+                            {gateways.length === 0 ? (
+                                <p className="text-white/40 text-sm">No gateways configured for this network.</p>
+                            ) : (
+                                <select
+                                    value={selectedGateway}
+                                    onChange={(e) => setSelectedGateway(e.target.value)}
+                                    className="w-full px-4 py-3 glass-card rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-purple-400 transition-all text-sm font-mono"
+                                    style={{ backgroundColor: 'rgba(255,255,255,0.05)' }}
+                                >
+                                    <option value="" disabled>Select a gateway...</option>
+                                    {gateways.map((gw) => (
+                                        <option key={gw} value={gw} style={{ backgroundColor: '#001B44' }}>{gw}</option>
+                                    ))}
+                                </select>
+                            )}
+                        </div>
+                        {selectedGateway && (
+                            <div className="gradient-card rounded-xl p-4 mb-6">
+                                <p className="text-sm text-white/60 mb-1">Gateway Address</p>
+                                <p className="text-sm font-mono text-white break-all">{selectedGateway}</p>
+                            </div>
+                        )}
+                        <div className="flex gap-3">
+                            <button
+                                type="submit"
+                                disabled={!selectedGateway || actionLoading}
+                                className="flex-1 px-6 py-3 rounded-xl font-bold text-white disabled:opacity-50 flex items-center justify-center gap-2 transition-all"
+                                style={{ background: 'linear-gradient(135deg, #9333EA 0%, #7C3AED 100%)', boxShadow: '0 4px 15px rgba(147, 51, 234, 0.3)' }}
+                            >
+                                {actionLoading && <Loader size={16} />}
+                                Confirm Delegate
                             </button>
                             <button
                                 type="button"
@@ -1401,6 +1522,8 @@
         const [networkModalOpen, setNetworkModalOpen] = useState(false);
         const [stakeNewAppOpen, setStakeNewAppOpen] = useState(false);
         const [autoTopUpModal, setAutoTopUpModal] = useState({ isOpen: false, app: null });
+        const [delegateModal, setDelegateModal] = useState({ isOpen: false, app: null });
+        const [gateways, setGateways] = useState({});
         const [autoTopUpConfigs, setAutoTopUpConfigs] = useState({});
         const [autoTopUpEvents, setAutoTopUpEvents] = useState([]);
         const [eventsLoading, setEventsLoading] = useState(false);
@@ -1457,6 +1580,9 @@
                         setThresholds(prev => ({ ...prev, ...config.thresholds }));
                     } else {
                         console.info('Config thresholds missing or invalid:', config && config.thresholds);
+                    }
+                    if (config && config.gateways) {
+                        setGateways(config.gateways);
                     }
                     await Promise.all([
                         loadApplications(currentNetwork),
@@ -1530,6 +1656,25 @@
                 type: 'fund',
             });
         }, []);
+
+        const handleDelegate = useCallback((app) => {
+            setDelegateModal({ isOpen: true, app });
+        }, []);
+
+        const handleDelegateConfirm = useCallback(async (address, gatewayAddress) => {
+            setOperationLoading({ type: 'delegate', address });
+            try {
+                const result = await api.delegateApplication(address, currentNetwork, gatewayAddress);
+                showNotification(`Delegated to gateway. TX: ${result.tx_hash || 'submitted'}`);
+                setDelegateModal({ isOpen: false, app: null });
+                await loadApplications(currentNetwork);
+            } catch (error) {
+                showNotification(`Delegate failed: ${error.message}`, 'error');
+                setDelegateModal({ isOpen: false, app: null });
+            } finally {
+                setOperationLoading({ type: null, address: null });
+            }
+        }, [currentNetwork, showNotification, loadApplications]);
 
         const handleAmountConfirm = useCallback(async (amount) => {
             const { app, type } = amountModal;
@@ -1653,6 +1798,7 @@
                                 onSelect={handleSelectAddress}
                                 onUpstake={handleUpstake}
                                 onFund={handleFund}
+                                onDelegate={handleDelegate}
                                 onAutoTopUp={handleAutoTopUp}
                                 thresholds={thresholds}
                                 sortField={sortField}
@@ -1701,6 +1847,15 @@
                     app={autoTopUpModal.app}
                     existingConfig={autoTopUpModal.app ? autoTopUpConfigs[autoTopUpModal.app.address] : null}
                     actionLoading={operationLoading.type === 'autotopup'}
+                />
+
+                <DelegateModal
+                    isOpen={delegateModal.isOpen}
+                    onClose={() => setDelegateModal({ isOpen: false, app: null })}
+                    onConfirm={handleDelegateConfirm}
+                    app={delegateModal.app}
+                    gateways={gateways[currentNetwork] || []}
+                    actionLoading={operationLoading.type === 'delegate'}
                 />
 
                 <NetworkSelectorModal

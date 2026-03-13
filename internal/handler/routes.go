@@ -16,6 +16,7 @@ func (s *Server) SetupRoutes(r *mux.Router) {
 	api.HandleFunc("/applications/{address}", s.handleGetApplication).Methods("GET")
 	api.HandleFunc("/applications/{address}/upstake", s.handleUpstake).Methods("POST")
 	api.HandleFunc("/applications/{address}/fund", s.handleFund).Methods("POST")
+	api.HandleFunc("/applications/{address}/delegate", s.handleDelegate).Methods("POST")
 	api.HandleFunc("/applications/{address}/autotopup", s.handleSetAutoTopUp).Methods("PUT")
 	api.HandleFunc("/applications/{address}/autotopup", s.handleDeleteAutoTopUp).Methods("DELETE")
 	api.HandleFunc("/bank", s.handleGetBank).Methods("GET")
