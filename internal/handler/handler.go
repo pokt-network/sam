@@ -201,7 +201,7 @@ func (s *Server) handleUpstake(w http.ResponseWriter, r *http.Request) {
 
 	s.Logger.Info("upstaking", "address", address, "pokt", req.Amount, "upokt", amountUpokt)
 
-	result, err := s.Executor.UpstakeApplication(address, networkConfig.Bank, network, amountUpokt, networkConfig.RPCEndpoint, networkConfig.APIEndpoint)
+	result, err := s.Executor.UpstakeApplication(address, network, amountUpokt, networkConfig.RPCEndpoint, networkConfig.APIEndpoint)
 	if err != nil {
 		s.Logger.Error("upstake error", "error", err)
 		respondWithError(w, http.StatusInternalServerError, "upstake operation failed")
@@ -444,10 +444,20 @@ func (s *Server) handleSetAutoTopUp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var minLiquidUpokt int64
+	if req.MinLiquidBalance > 0 {
+		minLiquidUpokt, err = validate.POKTAmount(req.MinLiquidBalance)
+		if err != nil {
+			respondWithError(w, http.StatusBadRequest, fmt.Sprintf("invalid min liquid balance: %s", err.Error()))
+			return
+		}
+	}
+
 	cfg := models.AutoTopUpConfig{
 		Enabled:          req.Enabled,
 		TriggerThreshold: triggerUpokt,
 		TargetAmount:     targetUpokt,
+		MinLiquidBalance: minLiquidUpokt,
 	}
 
 	if err := s.AutoTopUp.Set(network, address, cfg); err != nil {

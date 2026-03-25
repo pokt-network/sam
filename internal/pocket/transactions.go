@@ -49,7 +49,7 @@ func (e *Executor) StakeNewApplication(appAddress, serviceID, network string, am
 }
 
 // UpstakeApplication increases an application's stake by the given amount (in uPOKT).
-func (e *Executor) UpstakeApplication(appAddress, bankAddress, network string, amount int64, rpcEndpoint, apiEndpoint string) (*models.TransactionResponse, error) {
+func (e *Executor) UpstakeApplication(appAddress, network string, amount int64, rpcEndpoint, apiEndpoint string) (*models.TransactionResponse, error) {
 	app, err := e.Client.QueryApplication(appAddress, apiEndpoint, network)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query application before upstake: %w", err)

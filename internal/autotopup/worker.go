@@ -9,21 +9,36 @@ import (
 	"github.com/pokt-network/sam/internal/cache"
 	"github.com/pokt-network/sam/internal/config"
 	"github.com/pokt-network/sam/internal/models"
-	"github.com/pokt-network/sam/internal/pocket"
 )
 
 const (
 	maxEvents       = 100
-	pollInterval    = 10 * time.Second
 	pollMaxAttempts = 6
+	txFee           = int64(1) // 1 uPOKT fee for the upstake transaction
 )
+
+// PollInterval is the delay between balance confirmation polls.
+// Exported to allow tests to override.
+var PollInterval = 10 * time.Second
+
+// AppQuerier queries application state from the network.
+type AppQuerier interface {
+	QueryApplication(address, apiEndpoint, network string) (*models.Application, error)
+	QueryBalance(address, apiEndpoint string) (int64, error)
+}
+
+// TxExecutor executes on-chain transactions.
+type TxExecutor interface {
+	FundApplication(appAddress, bankAddress, network string, amount int64, rpcEndpoint string) (*models.TransactionResponse, error)
+	UpstakeApplication(appAddress, network string, amount int64, rpcEndpoint, apiEndpoint string) (*models.TransactionResponse, error)
+}
 
 // Worker runs periodic auto-top-up checks.
 type Worker struct {
 	Store     *Store
 	Config    *config.Config
-	Client    *pocket.Client
-	Executor  *pocket.Executor
+	Client    AppQuerier
+	Executor  TxExecutor
 	AppCache  *cache.Cache[[]models.Application]
 	BankCache *cache.Cache[models.BankAccount]
 	Logger    *slog.Logger
@@ -34,7 +49,7 @@ type Worker struct {
 }
 
 // NewWorker creates a new auto-top-up worker.
-func NewWorker(store *Store, cfg *config.Config, client *pocket.Client, executor *pocket.Executor, appCache *cache.Cache[[]models.Application], bankCache *cache.Cache[models.BankAccount], logger *slog.Logger) *Worker {
+func NewWorker(store *Store, cfg *config.Config, client AppQuerier, executor TxExecutor, appCache *cache.Cache[[]models.Application], bankCache *cache.Cache[models.BankAccount], logger *slog.Logger) *Worker {
 	return &Worker{
 		Store:     store,
 		Config:    cfg,
@@ -142,22 +157,17 @@ func (w *Worker) processApp(ctx context.Context, network, address string, cfg mo
 	)
 
 	// Smart funding: check if the app already has enough liquid balance.
-	// Reserve 1upokt for the upstake transaction fee.
-	const txFee int64 = 1
-	fundAmount := amountNeeded + txFee - app.LiquidBalance
+	// The app needs: amountNeeded (for stake increase) + txFee + minLiquidBalance (reserve).
+	totalLiquidNeeded := amountNeeded + txFee + cfg.MinLiquidBalance
+	fundAmount := totalLiquidNeeded - app.LiquidBalance
 	if fundAmount > 0 {
 		event.Phase = "fund"
+		event.FundAmount = fundAmount
 		w.Logger.Info("auto-top-up: funding app from bank",
 			"address", address, "fund_amount", fundAmount)
 
 		fundResult, err := w.Executor.FundApplication(address, netCfg.Bank, network, fundAmount, netCfg.RPCEndpoint)
-		if err != nil || !fundResult.Success {
-			errMsg := "fund failed"
-			if err != nil {
-				errMsg = err.Error()
-			} else if fundResult.Message != "" {
-				errMsg = fundResult.Message
-			}
+		if errMsg := txErrMsg("fund failed", fundResult, err); errMsg != "" {
 			w.Logger.Error("auto-top-up: fund failed", "address", address, "error", errMsg)
 			event.Error = errMsg
 			w.addEvent(event)
@@ -178,14 +188,8 @@ func (w *Worker) processApp(ctx context.Context, network, address string, cfg mo
 	w.Logger.Info("auto-top-up: upstaking app",
 		"address", address, "amount", amountNeeded)
 
-	stakeResult, err := w.Executor.UpstakeApplication(address, netCfg.Bank, network, amountNeeded, netCfg.RPCEndpoint, netCfg.APIEndpoint)
-	if err != nil || !stakeResult.Success {
-		errMsg := "upstake failed"
-		if err != nil {
-			errMsg = err.Error()
-		} else if stakeResult.Message != "" {
-			errMsg = stakeResult.Message
-		}
+	stakeResult, err := w.Executor.UpstakeApplication(address, network, amountNeeded, netCfg.RPCEndpoint, netCfg.APIEndpoint)
+	if errMsg := txErrMsg("upstake failed", stakeResult, err); errMsg != "" {
 		w.Logger.Error("auto-top-up: upstake failed", "address", address, "error", errMsg)
 		event.Error = errMsg
 		w.addEvent(event)
@@ -210,7 +214,7 @@ func (w *Worker) pollBalance(ctx context.Context, address, apiEndpoint string, m
 		case <-ctx.Done():
 			w.Logger.Info("auto-top-up: poll cancelled during shutdown")
 			return false
-		case <-time.After(pollInterval):
+		case <-time.After(PollInterval):
 		}
 		balance, err := w.Client.QueryBalance(address, apiEndpoint)
 		if err != nil {
@@ -224,6 +228,20 @@ func (w *Worker) pollBalance(ctx context.Context, address, apiEndpoint string, m
 			"attempt", i+1, "current", balance, "required", minBalance)
 	}
 	return false
+}
+
+// txErrMsg returns an error message if the transaction failed, or "" on success.
+func txErrMsg(fallback string, result *models.TransactionResponse, err error) string {
+	if err != nil {
+		return err.Error()
+	}
+	if result != nil && !result.Success {
+		if result.Message != "" {
+			return result.Message
+		}
+		return fallback
+	}
+	return ""
 }
 
 func (w *Worker) addEvent(event models.AutoTopUpEvent) {

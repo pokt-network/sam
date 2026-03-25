@@ -21,34 +21,25 @@ type Executor struct {
 }
 
 // NewExecutor returns an Executor that shells out to pocketd.
-func NewExecutor(cfg *config.Config, client *Client, logger *slog.Logger) *Executor {
+// Returns an error if the keyring backend is configured but invalid.
+func NewExecutor(cfg *config.Config, client *Client, logger *slog.Logger) (*Executor, error) {
+	if cfg.Config.KeyringBackend != "" {
+		if err := validate.KeyringBackend(cfg.Config.KeyringBackend); err != nil {
+			return nil, fmt.Errorf("invalid keyring backend: %w", err)
+		}
+	}
 	return &Executor{
 		Binary: "pocketd",
 		Config: cfg,
 		Client: client,
 		Logger: logger,
-	}
+	}, nil
 }
 
 // Run executes a pocketd command with the given arguments.
 func (e *Executor) Run(args ...string) (string, error) {
 	cmd := exec.Command(e.Binary, args...)
-
-	cmd.Env = []string{
-		"HOME=" + os.Getenv("HOME"),
-		"PATH=" + os.Getenv("PATH"),
-	}
-
-	if e.Config.Config.PocketdHome != "" {
-		cmd.Env = append(cmd.Env, "POCKETD_HOME="+e.Config.Config.PocketdHome)
-	}
-
-	if e.Config.Config.KeyringBackend != "" {
-		if err := validate.KeyringBackend(e.Config.Config.KeyringBackend); err != nil {
-			return "", fmt.Errorf("invalid keyring backend: %w", err)
-		}
-		cmd.Env = append(cmd.Env, "KEYRING_BACKEND="+e.Config.Config.KeyringBackend)
-	}
+	cmd.Env = e.buildEnv()
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
@@ -56,6 +47,21 @@ func (e *Executor) Run(args ...string) (string, error) {
 	}
 
 	return string(output), nil
+}
+
+// buildEnv constructs the environment variables for pocketd commands.
+func (e *Executor) buildEnv() []string {
+	env := []string{
+		"HOME=" + os.Getenv("HOME"),
+		"PATH=" + os.Getenv("PATH"),
+	}
+	if e.Config.Config.PocketdHome != "" {
+		env = append(env, "POCKETD_HOME="+e.Config.Config.PocketdHome)
+	}
+	if e.Config.Config.KeyringBackend != "" {
+		env = append(env, "KEYRING_BACKEND="+e.Config.Config.KeyringBackend)
+	}
+	return env
 }
 
 // RunTx executes a pocketd transaction command and parses the result.
@@ -68,7 +74,11 @@ func (e *Executor) RunTx(args ...string) (*models.TransactionResponse, error) {
 
 	var result map[string]interface{}
 	if err := json.Unmarshal([]byte(output), &result); err != nil {
-		return &models.TransactionResponse{Success: true, Message: "Transaction submitted"}, nil
+		e.Logger.Warn("pocketd returned non-JSON output", "output", output)
+		return &models.TransactionResponse{
+			Success: false,
+			Message: fmt.Sprintf("unexpected output: %.200s", output),
+		}, nil
 	}
 
 	txhash, _ := result["txhash"].(string)

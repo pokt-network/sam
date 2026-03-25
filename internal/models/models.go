@@ -107,6 +107,7 @@ type AutoTopUpConfig struct {
 	Enabled          bool  `json:"enabled"`
 	TriggerThreshold int64 `json:"trigger_threshold"` // uPOKT
 	TargetAmount     int64 `json:"target_amount"`     // uPOKT
+	MinLiquidBalance int64 `json:"min_liquid_balance"` // uPOKT — minimum liquid balance to keep after upstake
 }
 
 // AutoTopUpRequest is the JSON body from the frontend (POKT values).
@@ -114,6 +115,7 @@ type AutoTopUpRequest struct {
 	Enabled          bool    `json:"enabled"`
 	TriggerThreshold float64 `json:"trigger_threshold"` // POKT
 	TargetAmount     float64 `json:"target_amount"`     // POKT
+	MinLiquidBalance float64 `json:"min_liquid_balance"` // POKT — minimum liquid balance to keep after upstake
 }
 
 // AutoTopUpEvent records a single auto-top-up action.
@@ -123,6 +125,7 @@ type AutoTopUpEvent struct {
 	Address       string    `json:"address"`
 	PreviousStake int64     `json:"previous_stake"`
 	TargetAmount  int64     `json:"target_amount"`
+	FundAmount    int64     `json:"fund_amount,omitempty"`
 	FundTxHash    string    `json:"fund_tx_hash,omitempty"`
 	StakeTxHash   string    `json:"stake_tx_hash,omitempty"`
 	Success       bool      `json:"success"`

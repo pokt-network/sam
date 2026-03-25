@@ -58,7 +58,11 @@ func main() {
 	}
 
 	client := pocket.NewClient(logger)
-	executor := pocket.NewExecutor(cfg, client, logger)
+	executor, err := pocket.NewExecutor(cfg, client, logger)
+	if err != nil {
+		logger.Error("failed to initialize executor", "error", err)
+		os.Exit(1)
+	}
 
 	appCache := cache.New[[]models.Application](1 * time.Minute)
 	bankCache := cache.New[models.BankAccount](1 * time.Minute)

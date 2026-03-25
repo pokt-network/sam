@@ -48,7 +48,10 @@ func newTestServer(t *testing.T) *Server {
 	}
 
 	client := pocket.NewClient(logger)
-	executor := pocket.NewExecutor(cfg, client, logger)
+	executor, err := pocket.NewExecutor(cfg, client, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
 	appCache := cache.New[[]models.Application](1 * time.Minute)
 	bankCache := cache.New[models.BankAccount](1 * time.Minute)
 

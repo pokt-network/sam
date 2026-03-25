@@ -11,6 +11,8 @@ All notable changes to SAM (Simple AppStakes Manager) are documented in this fil
 
 ### Added
 
+- **Minimum liquid balance reserve** — Auto top-up now supports a `min_liquid_balance` setting per app to keep a minimum liquid POKT balance after upstaking (e.g., 5 POKT for tx fees). Set via the auto top-up API.
+
 - **Delegate to gateway** — Delegate an application to a gateway directly from the UI (`POST /api/applications/{address}/delegate`); gateway dropdown populated from `config.yaml`
 
 - **Docker support** — Multi-stage Dockerfile with pocketd bundled, docker-compose.yml for local dev
