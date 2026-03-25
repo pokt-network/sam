@@ -22,32 +22,15 @@ func (e *Executor) StakeNewApplication(appAddress, serviceID, network string, am
 		"amount", amountStr,
 	)
 
-	tempFile, err := os.CreateTemp("", "pocketd-stake-*.yaml")
+	stakeConfig, err := writeTempStakeConfig(amountStr, serviceID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create temp config file: %w", err)
+		return nil, err
 	}
-	if err := tempFile.Chmod(0600); err != nil {
-		tempFile.Close()
-		os.Remove(tempFile.Name())
-		return nil, fmt.Errorf("failed to set temp file permissions: %w", err)
-	}
-	tempConfig := tempFile.Name()
-
-	yamlContent := fmt.Sprintf("stake_amount: %s\nservice_ids:\n  - %s\n", amountStr, serviceID)
-	if _, err := tempFile.WriteString(yamlContent); err != nil {
-		tempFile.Close()
-		os.Remove(tempConfig)
-		return nil, fmt.Errorf("failed to write temp config file: %w", err)
-	}
-	if err := tempFile.Close(); err != nil {
-		os.Remove(tempConfig)
-		return nil, fmt.Errorf("failed to close temp config file: %w", err)
-	}
-	defer os.Remove(tempConfig)
+	defer os.Remove(stakeConfig)
 
 	args := []string{
 		"tx", "application", "stake-application",
-		"--config", tempConfig,
+		"--config", stakeConfig,
 		"--from", appAddress,
 		"--node", rpcEndpoint,
 		"--chain-id", network,
@@ -62,23 +45,7 @@ func (e *Executor) StakeNewApplication(appAddress, serviceID, network string, am
 	}
 
 	e.Logger.Debug("stake new app command", "args", args)
-
-	output, err := e.Run(args...)
-	if err != nil {
-		e.Logger.Error("stake new app command failed", "error", err)
-		return &models.TransactionResponse{
-			Success: false,
-			Message: "stake transaction failed",
-		}, nil
-	}
-
-	e.Logger.Info("stake new app transaction submitted", "output", output)
-
-	if txhash := parseTxHash(output); txhash != "" {
-		return &models.TransactionResponse{TxHash: txhash, Success: true}, nil
-	}
-
-	return &models.TransactionResponse{Success: true, Message: "Transaction submitted"}, nil
+	return e.RunTx(args...)
 }
 
 // UpstakeApplication increases an application's stake by the given amount (in uPOKT).
@@ -109,32 +76,15 @@ func (e *Executor) UpstakeApplication(appAddress, bankAddress, network string, a
 		"new_stake", newStakeAmount,
 	)
 
-	tempFile, err := os.CreateTemp("", "pocketd-stake-*.yaml")
+	stakeConfig, err := writeTempStakeConfig(amountStr, app.ServiceID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create temp config file: %w", err)
+		return nil, err
 	}
-	if err := tempFile.Chmod(0600); err != nil {
-		tempFile.Close()
-		os.Remove(tempFile.Name())
-		return nil, fmt.Errorf("failed to set temp file permissions: %w", err)
-	}
-	tempConfig := tempFile.Name()
-
-	yamlContent := fmt.Sprintf("stake_amount: %s\nservice_ids:\n  - %s\n", amountStr, app.ServiceID)
-	if _, err := tempFile.WriteString(yamlContent); err != nil {
-		tempFile.Close()
-		os.Remove(tempConfig)
-		return nil, fmt.Errorf("failed to write temp config file: %w", err)
-	}
-	if err := tempFile.Close(); err != nil {
-		os.Remove(tempConfig)
-		return nil, fmt.Errorf("failed to close temp config file: %w", err)
-	}
-	defer os.Remove(tempConfig)
+	defer os.Remove(stakeConfig)
 
 	args := []string{
 		"tx", "application", "stake-application",
-		"--config", tempConfig,
+		"--config", stakeConfig,
 		"--from", appAddress,
 		"--node", rpcEndpoint,
 		"--chain-id", network,
@@ -149,23 +99,7 @@ func (e *Executor) UpstakeApplication(appAddress, bankAddress, network string, a
 	}
 
 	e.Logger.Debug("upstake command", "args", args)
-
-	output, err := e.Run(args...)
-	if err != nil {
-		e.Logger.Error("upstake command failed", "error", err)
-		return &models.TransactionResponse{
-			Success: false,
-			Message: "upstake transaction failed",
-		}, nil
-	}
-
-	e.Logger.Info("upstake transaction submitted", "output", output)
-
-	if txhash := parseTxHash(output); txhash != "" {
-		return &models.TransactionResponse{TxHash: txhash, Success: true}, nil
-	}
-
-	return &models.TransactionResponse{Success: true, Message: "Transaction submitted"}, nil
+	return e.RunTx(args...)
 }
 
 // DelegateToGateway delegates an application to a gateway.
@@ -189,23 +123,7 @@ func (e *Executor) DelegateToGateway(appAddress, gatewayAddress, network, rpcEnd
 	}
 
 	e.Logger.Debug("delegate command", "args", args)
-
-	output, err := e.Run(args...)
-	if err != nil {
-		e.Logger.Error("delegate command failed", "error", err)
-		return &models.TransactionResponse{
-			Success: false,
-			Message: "delegate transaction failed",
-		}, nil
-	}
-
-	e.Logger.Info("delegate transaction submitted", "output", output)
-
-	if txhash := parseTxHash(output); txhash != "" {
-		return &models.TransactionResponse{TxHash: txhash, Success: true}, nil
-	}
-
-	return &models.TransactionResponse{Success: true, Message: "Transaction submitted"}, nil
+	return e.RunTx(args...)
 }
 
 // FundApplication sends POKT from the bank to an application address.
@@ -232,21 +150,31 @@ func (e *Executor) FundApplication(appAddress, bankAddress, network string, amou
 	}
 
 	e.Logger.Debug("fund command", "args", args)
+	return e.RunTx(args...)
+}
 
-	output, err := e.Run(args...)
+// writeTempStakeConfig writes a temporary YAML config for stake-application and returns its path.
+func writeTempStakeConfig(amount, serviceID string) (string, error) {
+	tempFile, err := os.CreateTemp("", "pocketd-stake-*.yaml")
 	if err != nil {
-		e.Logger.Error("fund command failed", "error", err)
-		return &models.TransactionResponse{
-			Success: false,
-			Message: "fund transaction failed",
-		}, nil
+		return "", fmt.Errorf("failed to create temp config file: %w", err)
+	}
+	if err := tempFile.Chmod(0600); err != nil {
+		tempFile.Close()
+		os.Remove(tempFile.Name())
+		return "", fmt.Errorf("failed to set temp file permissions: %w", err)
 	}
 
-	e.Logger.Info("fund transaction submitted", "output", output)
-
-	if txhash := parseTxHash(output); txhash != "" {
-		return &models.TransactionResponse{TxHash: txhash, Success: true}, nil
+	yamlContent := fmt.Sprintf("stake_amount: %s\nservice_ids:\n  - %s\n", amount, serviceID)
+	if _, err := tempFile.WriteString(yamlContent); err != nil {
+		tempFile.Close()
+		os.Remove(tempFile.Name())
+		return "", fmt.Errorf("failed to write temp config file: %w", err)
+	}
+	if err := tempFile.Close(); err != nil {
+		os.Remove(tempFile.Name())
+		return "", fmt.Errorf("failed to close temp config file: %w", err)
 	}
 
-	return &models.TransactionResponse{Success: true, Message: "Transaction submitted"}, nil
+	return tempFile.Name(), nil
 }

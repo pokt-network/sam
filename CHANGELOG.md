@@ -4,6 +4,11 @@ All notable changes to SAM (Simple AppStakes Manager) are documented in this fil
 
 ## [Unreleased]
 
+### Fixed
+
+- **Auto top-up upstake failing** — Fund calculation did not reserve 1 uPOKT for the upstake transaction fee, causing the on-chain stake tx to fail with insufficient funds while the fund tx succeeded (money left bank but stake was not increased)
+- **Silent on-chain tx failures** — Transaction responses now check the Cosmos SDK `code` field; previously a failed on-chain tx (code != 0) was treated as successful if it returned a txhash
+
 ### Added
 
 - **Delegate to gateway** — Delegate an application to a gateway directly from the UI (`POST /api/applications/{address}/delegate`); gateway dropdown populated from `config.yaml`

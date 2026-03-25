@@ -142,7 +142,9 @@ func (w *Worker) processApp(ctx context.Context, network, address string, cfg mo
 	)
 
 	// Smart funding: check if the app already has enough liquid balance.
-	fundAmount := amountNeeded - app.LiquidBalance
+	// Reserve 1upokt for the upstake transaction fee.
+	const txFee int64 = 1
+	fundAmount := amountNeeded + txFee - app.LiquidBalance
 	if fundAmount > 0 {
 		event.Phase = "fund"
 		w.Logger.Info("auto-top-up: funding app from bank",

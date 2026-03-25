@@ -8,6 +8,7 @@ import (
 	"os/exec"
 
 	"github.com/pokt-network/sam/internal/config"
+	"github.com/pokt-network/sam/internal/models"
 	"github.com/pokt-network/sam/internal/validate"
 )
 
@@ -57,13 +58,29 @@ func (e *Executor) Run(args ...string) (string, error) {
 	return string(output), nil
 }
 
-// parseTxHash attempts to extract the txhash from JSON output.
-func parseTxHash(output string) string {
-	var result map[string]interface{}
-	if err := json.Unmarshal([]byte(output), &result); err == nil {
-		if txhash, ok := result["txhash"].(string); ok {
-			return txhash
-		}
+// RunTx executes a pocketd transaction command and parses the result.
+// It checks both the CLI exit code and the on-chain response code.
+func (e *Executor) RunTx(args ...string) (*models.TransactionResponse, error) {
+	output, err := e.Run(args...)
+	if err != nil {
+		return nil, err
 	}
-	return ""
+
+	var result map[string]interface{}
+	if err := json.Unmarshal([]byte(output), &result); err != nil {
+		return &models.TransactionResponse{Success: true, Message: "Transaction submitted"}, nil
+	}
+
+	txhash, _ := result["txhash"].(string)
+
+	// code == 0 means success; any other value is an on-chain failure.
+	if code, ok := result["code"].(float64); ok && code != 0 {
+		rawLog, _ := result["raw_log"].(string)
+		if rawLog == "" {
+			rawLog = fmt.Sprintf("tx failed with code %d", int(code))
+		}
+		return &models.TransactionResponse{TxHash: txhash, Success: false, Message: rawLog}, nil
+	}
+
+	return &models.TransactionResponse{TxHash: txhash, Success: true}, nil
 }
