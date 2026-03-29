@@ -444,7 +444,7 @@ func (s *Server) handleSetAutoTopUp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var minLiquidUpokt int64
+	var minLiquidUpokt int64 = 1_000_000 // default 1 POKT
 	if req.MinLiquidBalance > 0 {
 		minLiquidUpokt, err = validate.POKTAmount(req.MinLiquidBalance)
 		if err != nil {
