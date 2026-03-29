@@ -662,14 +662,24 @@
         const [expanded, setExpanded] = useState(false);
         const displayEvents = (events || []).slice(0, 20);
 
+        const getEventStatus = (event) => {
+            if (event.error) return 'failed';
+            if (event.phase === 'complete' || (event.success && event.stake_tx_hash)) return 'completed';
+            if (event.phase === 'fund' && event.success) return 'funded';
+            if (event.success) return 'completed';
+            return event.phase || 'pending';
+        };
+
         const getStatusColor = (status) => {
             if (status === 'completed') return 'text-green-400';
+            if (status === 'funded') return 'text-blue-400';
             if (status === 'failed') return 'text-red-400';
             return 'text-yellow-400';
         };
 
         const getStatusBg = (status) => {
             if (status === 'completed') return 'bg-green-400/10 border-green-400/20';
+            if (status === 'funded') return 'bg-blue-400/10 border-blue-400/20';
             if (status === 'failed') return 'bg-red-400/10 border-red-400/20';
             return 'bg-yellow-400/10 border-yellow-400/20';
         };
@@ -710,8 +720,10 @@
                             </div>
                         ) : (
                             <div className="space-y-2">
-                                {displayEvents.map((event, idx) => (
-                                    <div key={idx} className={`flex items-center gap-4 px-4 py-3 rounded-xl border ${getStatusBg(event.status)}`}>
+                                {displayEvents.map((event, idx) => {
+                                    const status = getEventStatus(event);
+                                    return (
+                                    <div key={idx} className={`flex items-center gap-4 px-4 py-3 rounded-xl border ${getStatusBg(status)}`}>
                                         <div className="flex-shrink-0 text-xs text-white/50 w-16">
                                             {formatTimeAgo(event.timestamp)}
                                         </div>
@@ -728,6 +740,11 @@
                                             <span className="text-xs text-white/50">
                                                 {formatStake(event.previous_stake)} → {formatStake(event.target_amount)} POKT
                                             </span>
+                                            {event.fund_amount > 0 && status === 'funded' && (
+                                                <span className="ml-1 text-xs text-blue-400/60">
+                                                    (sent {formatStake(event.fund_amount)} POKT)
+                                                </span>
+                                            )}
                                         </div>
                                         <div className="flex-shrink-0 flex items-center gap-2">
                                             {event.fund_tx_hash && (
@@ -740,12 +757,18 @@
                                                     S:{event.stake_tx_hash.slice(0, 8)}
                                                 </span>
                                             )}
-                                            <span className={`text-xs font-semibold ${getStatusColor(event.status)}`}>
-                                                {event.status?.toUpperCase()}
+                                            {event.error && (
+                                                <span className="text-[10px] text-red-400/70 max-w-[150px] truncate" title={event.error}>
+                                                    {event.error}
+                                                </span>
+                                            )}
+                                            <span className={`text-xs font-semibold ${getStatusColor(status)}`}>
+                                                {status.toUpperCase()}
                                             </span>
                                         </div>
                                     </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         )}
                     </div>

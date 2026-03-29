@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"strings"
 
 	"github.com/pokt-network/sam/internal/config"
 	"github.com/pokt-network/sam/internal/models"
@@ -72,8 +73,15 @@ func (e *Executor) RunTx(args ...string) (*models.TransactionResponse, error) {
 		return nil, err
 	}
 
+	// pocketd --gas=auto prints "gas estimate: N\n" before the JSON.
+	// Extract the JSON object if the output has a prefix.
+	jsonStr := output
+	if idx := strings.Index(output, "{"); idx > 0 {
+		jsonStr = output[idx:]
+	}
+
 	var result map[string]interface{}
-	if err := json.Unmarshal([]byte(output), &result); err != nil {
+	if err := json.Unmarshal([]byte(jsonStr), &result); err != nil {
 		e.Logger.Warn("pocketd returned non-JSON output", "output", output)
 		return &models.TransactionResponse{
 			Success: false,

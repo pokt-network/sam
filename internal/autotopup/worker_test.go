@@ -15,9 +15,8 @@ import (
 
 // mockClient implements AppQuerier for testing.
 type mockClient struct {
-	app     *models.Application
-	balance int64
-	err     error
+	app *models.Application
+	err error
 }
 
 func (m *mockClient) QueryApplication(address, apiEndpoint, network string) (*models.Application, error) {
@@ -25,10 +24,6 @@ func (m *mockClient) QueryApplication(address, apiEndpoint, network string) (*mo
 		return nil, m.err
 	}
 	return m.app, nil
-}
-
-func (m *mockClient) QueryBalance(address, apiEndpoint string) (int64, error) {
-	return m.balance, nil
 }
 
 // mockExecutor implements TxExecutor and records the calls made.
@@ -91,13 +86,9 @@ const (
 	uPOKT      = int64(1_000_000) // 1 POKT in uPOKT
 )
 
-func init() {
-	PollInterval = 1 * time.Millisecond
-}
-
-func TestProcessApp_FundAmountAccountsForTxFee(t *testing.T) {
+func TestProcessApp_FundOnly_NoUpstake(t *testing.T) {
 	// App has 100 POKT staked, 0 liquid. Target is 200 POKT.
-	// amountNeeded = 100 POKT, plus 1 uPOKT tx fee.
+	// Phase 1: should fund and return (no upstake in same cycle).
 	client := &mockClient{
 		app: &models.Application{
 			Address:       testAddr,
@@ -105,7 +96,6 @@ func TestProcessApp_FundAmountAccountsForTxFee(t *testing.T) {
 			Stake:         100 * uPOKT,
 			LiquidBalance: 0,
 		},
-		balance: 200 * uPOKT, // poll returns enough
 	}
 	executor := &mockExecutor{}
 	w := newTestWorker(t, client, executor)
@@ -119,27 +109,23 @@ func TestProcessApp_FundAmountAccountsForTxFee(t *testing.T) {
 
 	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg)
 
-	// Fund should cover amountNeeded + txFee = 100 POKT + 1 uPOKT
+	// Fund should be called
 	if len(executor.fundCalls) != 1 {
 		t.Fatalf("expected 1 fund call, got %d", len(executor.fundCalls))
 	}
-	expectedFund := int64(100*uPOKT + 1) // amountNeeded + txFee
+	expectedFund := int64(100*uPOKT + 1 + 1*uPOKT) // amountNeeded + txFee + default 1 POKT reserve
 	if executor.fundCalls[0].Amount != expectedFund {
 		t.Errorf("fund amount = %d, want %d", executor.fundCalls[0].Amount, expectedFund)
 	}
 
-	// Upstake should be called with amountNeeded
-	if len(executor.upstakeCalls) != 1 {
-		t.Fatalf("expected 1 upstake call, got %d", len(executor.upstakeCalls))
-	}
-	if executor.upstakeCalls[0].Amount != 100*uPOKT {
-		t.Errorf("upstake amount = %d, want %d", executor.upstakeCalls[0].Amount, 100*uPOKT)
+	// Upstake should NOT be called — deferred to next cycle
+	if len(executor.upstakeCalls) != 0 {
+		t.Errorf("expected 0 upstake calls (deferred to next cycle), got %d", len(executor.upstakeCalls))
 	}
 
-	// Should record a success event
 	events := w.Events()
-	if len(events) != 1 || !events[0].Success {
-		t.Errorf("expected 1 success event, got %d events", len(events))
+	if len(events) != 1 || !events[0].Success || events[0].Phase != "fund" {
+		t.Errorf("expected 1 success fund event, got %v", events)
 	}
 }
 
@@ -153,7 +139,6 @@ func TestProcessApp_MinLiquidBalanceReserve(t *testing.T) {
 			Stake:         100 * uPOKT,
 			LiquidBalance: 0,
 		},
-		balance: 200 * uPOKT,
 	}
 	executor := &mockExecutor{}
 	w := newTestWorker(t, client, executor)
@@ -177,17 +162,15 @@ func TestProcessApp_MinLiquidBalanceReserve(t *testing.T) {
 		t.Errorf("fund amount = %d, want %d", executor.fundCalls[0].Amount, expectedFund)
 	}
 
-	// Upstake amount should NOT include the reserve — only the stake increase
-	if executor.upstakeCalls[0].Amount != 100*uPOKT {
-		t.Errorf("upstake amount = %d, want %d (reserve should not be staked)", executor.upstakeCalls[0].Amount, 100*uPOKT)
+	// No upstake in fund cycle
+	if len(executor.upstakeCalls) != 0 {
+		t.Errorf("expected 0 upstake calls in fund cycle, got %d", len(executor.upstakeCalls))
 	}
 }
 
-func TestProcessApp_ExistingLiquidCoversReserve(t *testing.T) {
-	// App has 100 POKT staked, 110 POKT liquid. Target is 200 POKT.
-	// MinLiquidBalance = 5 POKT.
-	// totalLiquidNeeded = 100 POKT + 1 + 5 POKT = 105_000_001
-	// App already has 110 POKT liquid, which is enough. No fund needed.
+func TestProcessApp_UpstakeWhenLiquidSufficient(t *testing.T) {
+	// Phase 2: App has 100 POKT staked, 110 POKT liquid (from prior fund).
+	// Should skip fund and upstake directly.
 	client := &mockClient{
 		app: &models.Application{
 			Address:       testAddr,
@@ -195,7 +178,6 @@ func TestProcessApp_ExistingLiquidCoversReserve(t *testing.T) {
 			Stake:         100 * uPOKT,
 			LiquidBalance: 110 * uPOKT,
 		},
-		balance: 110 * uPOKT,
 	}
 	executor := &mockExecutor{}
 	w := newTestWorker(t, client, executor)
@@ -210,24 +192,25 @@ func TestProcessApp_ExistingLiquidCoversReserve(t *testing.T) {
 
 	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg)
 
-	// No fund needed — app has more than enough liquid
 	if len(executor.fundCalls) != 0 {
-		t.Errorf("expected 0 fund calls, got %d (amount: %d)", len(executor.fundCalls), executor.fundCalls[0].Amount)
+		t.Errorf("expected 0 fund calls, got %d", len(executor.fundCalls))
 	}
-	// Upstake should still happen
 	if len(executor.upstakeCalls) != 1 {
 		t.Fatalf("expected 1 upstake call, got %d", len(executor.upstakeCalls))
 	}
 	if executor.upstakeCalls[0].Amount != 100*uPOKT {
 		t.Errorf("upstake amount = %d, want %d", executor.upstakeCalls[0].Amount, 100*uPOKT)
 	}
+
+	events := w.Events()
+	if len(events) != 1 || !events[0].Success || events[0].Phase != "complete" {
+		t.Errorf("expected 1 success complete event, got %v", events)
+	}
 }
 
 func TestProcessApp_PartialLiquidBalance(t *testing.T) {
 	// App has 100 POKT staked, 50 POKT liquid. Target is 200 POKT.
-	// MinLiquidBalance = 5 POKT.
-	// totalLiquidNeeded = 100 POKT + 1 + 5 POKT = 105_000_001
-	// Fund = 105_000_001 - 50_000_000 = 55_000_001
+	// MinLiquidBalance = 5 POKT. Not enough liquid — should fund only.
 	client := &mockClient{
 		app: &models.Application{
 			Address:       testAddr,
@@ -235,7 +218,6 @@ func TestProcessApp_PartialLiquidBalance(t *testing.T) {
 			Stake:         100 * uPOKT,
 			LiquidBalance: 50 * uPOKT,
 		},
-		balance: 200 * uPOKT,
 	}
 	executor := &mockExecutor{}
 	w := newTestWorker(t, client, executor)
@@ -256,6 +238,9 @@ func TestProcessApp_PartialLiquidBalance(t *testing.T) {
 	expectedFund := int64(100*uPOKT + 1 + 5*uPOKT - 50*uPOKT)
 	if executor.fundCalls[0].Amount != expectedFund {
 		t.Errorf("fund amount = %d, want %d", executor.fundCalls[0].Amount, expectedFund)
+	}
+	if len(executor.upstakeCalls) != 0 {
+		t.Errorf("expected 0 upstake calls in fund cycle, got %d", len(executor.upstakeCalls))
 	}
 }
 
@@ -321,9 +306,9 @@ func TestProcessApp_FundFails_NoUpstake(t *testing.T) {
 	}
 }
 
-func TestProcessApp_ZeroMinLiquid_BackwardCompat(t *testing.T) {
-	// With MinLiquidBalance=0 (default), behavior matches the original fix:
-	// fund = amountNeeded + txFee - liquid
+func TestProcessApp_ZeroMinLiquid_DefaultsTo1POKT(t *testing.T) {
+	// With MinLiquidBalance=0, defaults to 1 POKT reserve.
+	// fund = amountNeeded + txFee + 1 POKT (default) - liquid
 	client := &mockClient{
 		app: &models.Application{
 			Address:       testAddr,
@@ -331,7 +316,6 @@ func TestProcessApp_ZeroMinLiquid_BackwardCompat(t *testing.T) {
 			Stake:         180 * uPOKT,
 			LiquidBalance: 10 * uPOKT,
 		},
-		balance: 200 * uPOKT,
 	}
 	executor := &mockExecutor{}
 	w := newTestWorker(t, client, executor)
@@ -340,19 +324,16 @@ func TestProcessApp_ZeroMinLiquid_BackwardCompat(t *testing.T) {
 		Enabled:          true,
 		TriggerThreshold: 190 * uPOKT,
 		TargetAmount:     200 * uPOKT,
-		MinLiquidBalance: 0, // default
+		MinLiquidBalance: 0,
 	}
 	netCfg := w.Config.Config.Networks[testNetwork]
 
 	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg)
 
-	// amountNeeded = 20 POKT, liquid = 10 POKT
-	// totalLiquidNeeded = 20 POKT + 1 + 0 = 20_000_001
-	// fund = 20_000_001 - 10_000_000 = 10_000_001
 	if len(executor.fundCalls) != 1 {
 		t.Fatalf("expected 1 fund call, got %d", len(executor.fundCalls))
 	}
-	expectedFund := int64(20*uPOKT + 1 - 10*uPOKT)
+	expectedFund := int64(20*uPOKT + 1 + 1*uPOKT - 10*uPOKT) // amountNeeded + txFee + default 1 POKT - liquid
 	if executor.fundCalls[0].Amount != expectedFund {
 		t.Errorf("fund amount = %d, want %d", executor.fundCalls[0].Amount, expectedFund)
 	}

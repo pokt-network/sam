@@ -12,19 +12,14 @@ import (
 )
 
 const (
-	maxEvents       = 100
-	pollMaxAttempts = 6
-	txFee           = int64(1) // 1 uPOKT fee for the upstake transaction
+	maxEvents              = 100
+	txFee                  = int64(1)         // 1 uPOKT fee for the upstake transaction
+	defaultMinLiquidBalance = int64(1_000_000) // 1 POKT default reserve
 )
-
-// PollInterval is the delay between balance confirmation polls.
-// Exported to allow tests to override.
-var PollInterval = 10 * time.Second
 
 // AppQuerier queries application state from the network.
 type AppQuerier interface {
 	QueryApplication(address, apiEndpoint, network string) (*models.Application, error)
-	QueryBalance(address, apiEndpoint string) (int64, error)
 }
 
 // TxExecutor executes on-chain transactions.
@@ -63,11 +58,15 @@ func NewWorker(store *Store, cfg *config.Config, client AppQuerier, executor TxE
 }
 
 // Run starts the worker loop. It blocks until ctx is cancelled.
+// Runs an immediate check on startup, then every 5 minutes.
 func (w *Worker) Run(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 
 	w.Logger.Info("auto-top-up worker started")
+
+	// Run immediately on startup instead of waiting for the first tick.
+	w.RunOnce(ctx)
 
 	for {
 		select {
@@ -90,6 +89,7 @@ func (w *Worker) RunOnce(ctx context.Context) {
 
 	enabled := w.Store.GetEnabled()
 	if len(enabled) == 0 {
+		w.Logger.Debug("auto-top-up: no enabled configs, skipping cycle")
 		return
 	}
 
@@ -156,11 +156,17 @@ func (w *Worker) processApp(ctx context.Context, network, address string, cfg mo
 		"amount_needed", amountNeeded,
 	)
 
-	// Smart funding: check if the app already has enough liquid balance.
-	// The app needs: amountNeeded (for stake increase) + txFee + minLiquidBalance (reserve).
-	totalLiquidNeeded := amountNeeded + txFee + cfg.MinLiquidBalance
+	// Two-phase approach: fund in one cycle, upstake in the next.
+	// This lets the fund tx confirm on-chain before attempting the upstake.
+	minLiquid := cfg.MinLiquidBalance
+	if minLiquid <= 0 {
+		minLiquid = defaultMinLiquidBalance
+	}
+	totalLiquidNeeded := amountNeeded + txFee + minLiquid
 	fundAmount := totalLiquidNeeded - app.LiquidBalance
+
 	if fundAmount > 0 {
+		// Phase 1: Fund the app. Return and let the next cycle handle the upstake.
 		event.Phase = "fund"
 		event.FundAmount = fundAmount
 		w.Logger.Info("auto-top-up: funding app from bank",
@@ -174,16 +180,16 @@ func (w *Worker) processApp(ctx context.Context, network, address string, cfg mo
 			return
 		}
 		event.FundTxHash = fundResult.TxHash
+		event.Success = true
+		w.addEvent(event)
 
-		// Poll for balance confirmation.
-		if !w.pollBalance(ctx, address, netCfg.APIEndpoint, app.LiquidBalance+fundAmount) {
-			w.Logger.Warn("auto-top-up: balance not confirmed after polling, proceeding anyway", "address", address)
-		}
-	} else {
-		w.Logger.Info("auto-top-up: app has sufficient liquid balance, skipping fund", "address", address)
+		w.BankCache.Delete(network)
+		w.Logger.Info("auto-top-up: funded, upstake will happen next cycle",
+			"address", address, "tx_hash", fundResult.TxHash)
+		return
 	}
 
-	// Upstake to the target amount.
+	// Phase 2: App has enough liquid (from a previous fund or existing balance). Upstake now.
 	event.Phase = "upstake"
 	w.Logger.Info("auto-top-up: upstaking app",
 		"address", address, "amount", amountNeeded)
@@ -201,33 +207,11 @@ func (w *Worker) processApp(ctx context.Context, network, address string, cfg mo
 	event.Success = true
 	w.addEvent(event)
 
-	// Invalidate caches.
 	w.AppCache.Delete(network)
 	w.BankCache.Delete(network)
 
-	w.Logger.Info("auto-top-up: success", "address", address, "network", network)
-}
-
-func (w *Worker) pollBalance(ctx context.Context, address, apiEndpoint string, minBalance int64) bool {
-	for i := 0; i < pollMaxAttempts; i++ {
-		select {
-		case <-ctx.Done():
-			w.Logger.Info("auto-top-up: poll cancelled during shutdown")
-			return false
-		case <-time.After(PollInterval):
-		}
-		balance, err := w.Client.QueryBalance(address, apiEndpoint)
-		if err != nil {
-			w.Logger.Warn("auto-top-up: poll balance error", "attempt", i+1, "error", err)
-			continue
-		}
-		if balance >= minBalance {
-			return true
-		}
-		w.Logger.Debug("auto-top-up: balance not yet confirmed",
-			"attempt", i+1, "current", balance, "required", minBalance)
-	}
-	return false
+	w.Logger.Info("auto-top-up: upstake complete",
+		"address", address, "network", network, "tx_hash", stakeResult.TxHash)
 }
 
 // txErrMsg returns an error message if the transaction failed, or "" on success.
