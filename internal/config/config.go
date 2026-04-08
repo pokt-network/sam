@@ -22,11 +22,18 @@ type NetworkConfig struct {
 	Applications []string `yaml:"applications"`
 }
 
+// AuthConfig holds optional API authentication settings.
+type AuthConfig struct {
+	Enabled bool   `yaml:"enabled"`
+	Token   string `yaml:"token"`
+}
+
 // Config is the top-level configuration loaded from config.yaml.
 type Config struct {
 	Config struct {
 		KeyringBackend string                   `yaml:"keyring-backend"`
 		PocketdHome    string                   `yaml:"pocketd-home"`
+		Auth           AuthConfig               `yaml:"auth"`
 		Thresholds     Thresholds               `yaml:"thresholds"`
 		Networks       map[string]NetworkConfig `yaml:"networks"`
 	} `yaml:"config"`

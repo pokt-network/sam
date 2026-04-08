@@ -64,9 +64,14 @@ affinity: {}
 
 env:
   PORT: "9999"
+  # ALLOWED_ORIGINS: "https://sam.example.com"
+  # AUTH_TOKEN: "your-secret-token-here"
 
 config:
   keyring-backend: test
+  auth:
+    enabled: false
+    token: ""
   thresholds:
     warning_threshold: 2000000000
     danger_threshold: 1000000000

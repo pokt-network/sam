@@ -4,8 +4,18 @@ All notable changes to SAM (Simple AppStakes Manager) are documented in this fil
 
 ## [Unreleased]
 
+### Added
+
+- **Configurable CORS origins** — `ALLOWED_ORIGINS` env var accepts comma-separated origins for production domains; falls back to localhost when unset
+- **API authentication** — Optional bearer token auth for write endpoints (stake, upstake, fund, delegate, auto-top-up); configured via `auth.token` in config.yaml or `AUTH_TOKEN` env var
+- **Frontend auth flow** — Token input modal triggered on 401 response; token stored in sessionStorage; lock/unlock indicator in header
+- **Content-Security-Policy header** — CSP added to SecurityHeaders middleware allowing required CDN sources
+- **Tailwind SRI** — Subresource integrity hash added for Tailwind CDN script
+- **API request timeouts** — Frontend fetch calls use AbortController with 15s timeout for reads, 60s for writes
+
 ### Fixed
 
+- **Silent background load failures** — Bank account, auto-top-up config, and auto-top-up event load errors now show user-visible notifications instead of logging to console only
 - **Auto top-up upstake failing** — Fund calculation did not reserve 1 uPOKT for the upstake transaction fee, causing the on-chain stake tx to fail with insufficient funds while the fund tx succeeded (money left bank but stake was not increased)
 - **Silent on-chain tx failures** — Transaction responses now check the Cosmos SDK `code` field; previously a failed on-chain tx (code != 0) was treated as successful if it returned a txhash
 

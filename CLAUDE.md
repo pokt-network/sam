@@ -30,6 +30,8 @@ helm lint charts/sam    # Lint Helm chart
 | `PORT` | `9999` | HTTP server port |
 | `CONFIG_FILE` | `config.yaml` | Path to config file |
 | `DATA_DIR` | `.` | Directory for `autotopup.json` |
+| `ALLOWED_ORIGINS` | `localhost:PORT` | Comma-separated CORS allowed origins |
+| `AUTH_TOKEN` | (none) | Bearer token for write endpoint auth (overrides config.yaml) |
 
 Run with custom port: `PORT=8080 ./sam`
 

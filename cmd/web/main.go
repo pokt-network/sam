@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -43,6 +44,20 @@ func main() {
 	if err != nil {
 		logger.Error("failed to load config", "error", err)
 		os.Exit(1)
+	}
+
+	// AUTH_TOKEN env var takes precedence over config.yaml auth settings.
+	if authToken := os.Getenv("AUTH_TOKEN"); authToken != "" {
+		cfg.Config.Auth.Enabled = true
+		cfg.Config.Auth.Token = authToken
+	}
+
+	if cfg.Config.Auth.Enabled {
+		if cfg.Config.Auth.Token == "" {
+			logger.Error("auth is enabled but no token is configured (set auth.token in config.yaml or AUTH_TOKEN env var)")
+			os.Exit(1)
+		}
+		logger.Info("API authentication enabled for write endpoints")
 	}
 
 	networks := make([]string, 0, len(cfg.Config.Networks))
@@ -101,13 +116,24 @@ func main() {
 		os.Exit(1)
 	}
 
+	allowedOrigins := []string{
+		"http://localhost:" + port,
+		"http://127.0.0.1:" + port,
+	}
+	if originsEnv := os.Getenv("ALLOWED_ORIGINS"); originsEnv != "" {
+		allowedOrigins = nil
+		for _, o := range strings.Split(originsEnv, ",") {
+			if trimmed := strings.TrimSpace(o); trimmed != "" {
+				allowedOrigins = append(allowedOrigins, trimmed)
+			}
+		}
+	}
+	logger.Info("CORS configuration", "allowed_origins", allowedOrigins)
+
 	corsHandler := cors.New(cors.Options{
-		AllowedOrigins: []string{
-			"http://localhost:" + port,
-			"http://127.0.0.1:" + port,
-		},
+		AllowedOrigins: allowedOrigins,
 		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders: []string{"Content-Type"},
+		AllowedHeaders: []string{"Content-Type", "Authorization"},
 	})
 
 	httpServer := &http.Server{

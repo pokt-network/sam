@@ -7,6 +7,7 @@
     <script crossorigin="anonymous" src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" integrity="sha384-DGyLxAyjq0f9SPpVevD6IgztCFlnMF6oW/XQGmfe+IsZ8TqEiDrcHkMLKI6fiB/Z"></script>
     <script crossorigin="anonymous" src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" integrity="sha384-gTGxhz21lVGYNMcdJOyq01Edg0jhn/c22nsx0kyqP0TxaV5WVdsSH1fSDUf5YJj1"></script>
     <script crossorigin="anonymous" src="https://unpkg.com/@babel/standalone@7.26.5/babel.min.js" integrity="sha384-SF03qAKhbEVbqj7hDewV6mk3wJJyzxf3nBCxNuF46+Sof8f1fx4Pes2gOVItRZn9"></script>
+    <!-- Tailwind CDN serves dynamic content; SRI not possible without a build pipeline -->
     <script src="https://cdn.tailwindcss.com/3.4.17"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap');
@@ -103,7 +104,40 @@
 
     const API_BASE_URL = window.location.origin + '/api';
 
+    // Auth token management (sessionStorage — cleared when tab closes).
+    const getAuthToken = () => sessionStorage.getItem('sam_auth_token');
+    const setAuthToken = (token) => sessionStorage.setItem('sam_auth_token', token);
+    const clearAuthToken = () => sessionStorage.removeItem('sam_auth_token');
+
+    const getAuthHeaders = (method) => {
+        const headers = { 'Content-Type': 'application/json' };
+        const token = getAuthToken();
+        if (token && method !== 'GET') {
+            headers['Authorization'] = `Bearer ${token}`;
+        }
+        return headers;
+    };
+
+    const fetchWithTimeout = async (url, options = {}, timeoutMs = 30000) => {
+        const controller = new AbortController();
+        const id = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            return await fetch(url, { ...options, signal: controller.signal });
+        } catch (err) {
+            if (err.name === 'AbortError') {
+                throw new Error('Request timed out. Please try again.');
+            }
+            throw err;
+        } finally {
+            clearTimeout(id);
+        }
+    };
+
     const handleResponse = async (response, fallbackMessage) => {
+        if (response.status === 401) {
+            window.dispatchEvent(new CustomEvent('sam-auth-required'));
+            throw new Error('Authentication required. Please enter your API token.');
+        }
         if (!response.ok) {
             let errorMessage = fallbackMessage;
             try {
@@ -119,82 +153,83 @@
     const api = {
         fetchApplications: async (network, forceRefresh = false) => {
             const url = `${API_BASE_URL}/applications?network=${network}${forceRefresh ? '&refresh=true' : ''}`;
-            const response = await fetch(url);
+            const response = await fetchWithTimeout(url, {}, 15000);
             return handleResponse(response, 'Failed to fetch applications');
         },
         fetchApplication: async (address, network) => {
-            const response = await fetch(`${API_BASE_URL}/applications/${address}?network=${network}`);
+            const response = await fetchWithTimeout(`${API_BASE_URL}/applications/${address}?network=${network}`, {}, 15000);
             return handleResponse(response, 'Failed to fetch application');
         },
         fetchBank: async (network, forceRefresh = false) => {
             const url = `${API_BASE_URL}/bank?network=${network}${forceRefresh ? '&refresh=true' : ''}`;
-            const response = await fetch(url);
+            const response = await fetchWithTimeout(url, {}, 15000);
             return handleResponse(response, 'Failed to fetch bank account');
         },
         upstakeApplication: async (address, network, amount) => {
-            const response = await fetch(`${API_BASE_URL}/applications/${address}/upstake?network=${network}`, {
+            const response = await fetchWithTimeout(`${API_BASE_URL}/applications/${address}/upstake?network=${network}`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders('POST'),
                 body: JSON.stringify({ amount })
-            });
+            }, 60000);
             return handleResponse(response, 'Failed to upstake application');
         },
         fundApplication: async (address, network, amount) => {
-            const response = await fetch(`${API_BASE_URL}/applications/${address}/fund?network=${network}`, {
+            const response = await fetchWithTimeout(`${API_BASE_URL}/applications/${address}/fund?network=${network}`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders('POST'),
                 body: JSON.stringify({ amount })
-            });
+            }, 60000);
             return handleResponse(response, 'Failed to fund application');
         },
         delegateApplication: async (address, network, gatewayAddress) => {
-            const response = await fetch(`${API_BASE_URL}/applications/${address}/delegate?network=${network}`, {
+            const response = await fetchWithTimeout(`${API_BASE_URL}/applications/${address}/delegate?network=${network}`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders('POST'),
                 body: JSON.stringify({ gateway_address: gatewayAddress })
-            });
+            }, 60000);
             return handleResponse(response, 'Failed to delegate application');
         },
         fetchNetworks: async () => {
-            const response = await fetch(`${API_BASE_URL}/networks`);
+            const response = await fetchWithTimeout(`${API_BASE_URL}/networks`, {}, 15000);
             return handleResponse(response, 'Failed to fetch networks');
         },
         fetchConfig: async () => {
-            const response = await fetch(`${API_BASE_URL}/config`);
+            const response = await fetchWithTimeout(`${API_BASE_URL}/config`, {}, 15000);
             return handleResponse(response, 'Failed to fetch config');
         },
         fetchServices: async (network) => {
-            const response = await fetch(`${API_BASE_URL}/services?network=${network}`);
+            const response = await fetchWithTimeout(`${API_BASE_URL}/services?network=${network}`, {}, 15000);
             return handleResponse(response, 'Failed to fetch services');
         },
         stakeNewApplication: async (network, address, serviceId, amount) => {
-            const response = await fetch(`${API_BASE_URL}/applications/stake?network=${network}`, {
+            const response = await fetchWithTimeout(`${API_BASE_URL}/applications/stake?network=${network}`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders('POST'),
                 body: JSON.stringify({ address, service_id: serviceId, amount })
-            });
+            }, 60000);
             return handleResponse(response, 'Failed to stake application');
         },
         fetchAutoTopUp: async (network) => {
-            const response = await fetch(`${API_BASE_URL}/autotopup?network=${network}`);
+            const response = await fetchWithTimeout(`${API_BASE_URL}/autotopup?network=${network}`, {}, 15000);
             return handleResponse(response, 'Failed to fetch auto-top-up configs');
         },
         setAutoTopUp: async (address, network, config) => {
-            const response = await fetch(`${API_BASE_URL}/applications/${address}/autotopup?network=${network}`, {
+            const response = await fetchWithTimeout(`${API_BASE_URL}/applications/${address}/autotopup?network=${network}`, {
                 method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
+                headers: getAuthHeaders('PUT'),
                 body: JSON.stringify(config)
-            });
+            }, 60000);
             return handleResponse(response, 'Failed to set auto-top-up config');
         },
         deleteAutoTopUp: async (address, network) => {
-            const response = await fetch(`${API_BASE_URL}/applications/${address}/autotopup?network=${network}`, {
-                method: 'DELETE'
-            });
+            const response = await fetchWithTimeout(`${API_BASE_URL}/applications/${address}/autotopup?network=${network}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+            }, 60000);
             return handleResponse(response, 'Failed to delete auto-top-up config');
         },
         fetchAutoTopUpEvents: async () => {
-            const response = await fetch(`${API_BASE_URL}/autotopup/events`);
+            const response = await fetchWithTimeout(`${API_BASE_URL}/autotopup/events`, {}, 15000);
             return handleResponse(response, 'Failed to fetch auto-top-up events');
         }
     };
@@ -302,6 +337,20 @@
         <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
             <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+        </svg>
+    );
+
+    const LockIcon = ({ size = 16 }) => (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+        </svg>
+    );
+
+    const UnlockIcon = ({ size = 16 }) => (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
         </svg>
     );
 
@@ -441,9 +490,9 @@
                 const data = await api.fetchBank(network);
                 setBankAccount(data);
             } catch (error) {
-                console.error(`Failed to load bank: ${error.message}`);
+                showNotification(`Failed to load bank: ${error.message}`, 'error');
             }
-        }, []);
+        }, [showNotification]);
 
         return { bankAccount, setBankAccount, loadBankAccount };
     };
@@ -545,7 +594,7 @@
     }
 
     // Header Component
-    const Header = ({ currentNetwork, onRefresh, loading, autoRefreshEnabled, onToggleAutoRefresh, onNetworkClick, onStakeNewApp }) => (
+    const Header = ({ currentNetwork, onRefresh, loading, autoRefreshEnabled, onToggleAutoRefresh, onNetworkClick, onStakeNewApp, authRequired, onAuthClick }) => (
         <header className="glass-card border-b border-white/10">
             <div className="max-w-screen-2xl mx-auto px-6 py-6">
                 <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
@@ -559,6 +608,16 @@
                                 <RefreshCw size={14} className="animate-spin" />
                                 Auto
                             </span>
+                        )}
+                        {authRequired && (
+                            <button
+                                onClick={onAuthClick}
+                                className="px-3 py-1 glass-card rounded-full text-sm font-medium flex items-center gap-1 hover:bg-white/10 transition-all"
+                                title={getAuthToken() ? 'Authenticated (click to update token)' : 'Click to enter API token'}
+                            >
+                                {getAuthToken() ? <UnlockIcon size={14} /> : <LockIcon size={14} />}
+                                {getAuthToken() ? 'Auth' : 'Locked'}
+                            </button>
                         )}
                     </div>
                     <nav className="flex flex-wrap items-center gap-3" aria-label="Main actions">
@@ -1536,6 +1595,80 @@
     );
 
     // Main App
+    const AuthTokenModal = ({ isOpen, onClose, onSubmit }) => {
+        const [token, setToken] = useState('');
+        const inputRef = useRef(null);
+        const modalRef = useRef(null);
+
+        useFocusTrap(modalRef, isOpen);
+
+        useEffect(() => {
+            if (isOpen) {
+                setToken('');
+                setTimeout(() => inputRef.current?.focus(), 50);
+            }
+        }, [isOpen]);
+
+        useEffect(() => {
+            if (!isOpen) return;
+            const handleKeyDown = (e) => { if (e.key === 'Escape') onClose(); };
+            window.addEventListener('keydown', handleKeyDown);
+            return () => window.removeEventListener('keydown', handleKeyDown);
+        }, [isOpen, onClose]);
+
+        if (!isOpen) return null;
+
+        const handleSubmit = (e) => {
+            e.preventDefault();
+            if (token.trim()) {
+                setAuthToken(token.trim());
+                onSubmit(token.trim());
+            }
+        };
+
+        return (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+                 onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
+                <div ref={modalRef} className="glass-card rounded-2xl p-8 max-w-md w-full border-2 border-white/20"
+                     onClick={(e) => e.stopPropagation()}>
+                    <h2 id="auth-modal-title" className="text-2xl font-black gradient-text mb-4">Authentication Required</h2>
+                    <p className="text-white/80 mb-6">
+                        This action requires an API token. Enter your token to continue.
+                    </p>
+                    <form onSubmit={handleSubmit}>
+                        <div className="mb-6">
+                            <label className="block text-sm text-white/60 mb-2">API Token</label>
+                            <input
+                                ref={inputRef}
+                                type="password"
+                                value={token}
+                                onChange={(e) => setToken(e.target.value)}
+                                placeholder="Enter API token..."
+                                className="w-full px-4 py-3 glass-card rounded-xl text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-blue-400 transition-all text-lg"
+                            />
+                        </div>
+                        <div className="flex gap-3">
+                            <button
+                                type="submit"
+                                disabled={!token.trim()}
+                                className="flex-1 px-6 py-3 btn-primary rounded-xl font-bold text-white disabled:opacity-50"
+                            >
+                                Authenticate
+                            </button>
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                className="flex-1 px-6 py-3 glass-card hover:bg-white/10 rounded-xl font-bold transition-all"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        );
+    };
+
     const SAM = () => {
         const [currentNetwork, setCurrentNetwork] = useState('pocket');
         const [availableNetworks, setAvailableNetworks] = useState(['pocket']);
@@ -1550,6 +1683,8 @@
         const [autoTopUpConfigs, setAutoTopUpConfigs] = useState({});
         const [autoTopUpEvents, setAutoTopUpEvents] = useState([]);
         const [eventsLoading, setEventsLoading] = useState(false);
+        const [authRequired, setAuthRequired] = useState(false);
+        const [authModalOpen, setAuthModalOpen] = useState(false);
         const [services, setServices] = useState([]);
         const [servicesLoading, setServicesLoading] = useState(false);
         const [thresholds, setThresholds] = useState({
@@ -1570,14 +1705,25 @@
             loadBankAccount(currentNetwork);
         }, currentNetwork);
 
+        useEffect(() => {
+            const handleAuthRequired = () => setAuthModalOpen(true);
+            window.addEventListener('sam-auth-required', handleAuthRequired);
+            return () => window.removeEventListener('sam-auth-required', handleAuthRequired);
+        }, []);
+
+        const handleAuthSubmit = useCallback((token) => {
+            setAuthModalOpen(false);
+            showNotification('Token saved for this session');
+        }, [showNotification]);
+
         const loadAutoTopUpConfigs = useCallback(async (network) => {
             try {
                 const data = await api.fetchAutoTopUp(network);
                 setAutoTopUpConfigs(data || {});
             } catch (error) {
-                console.error('Failed to load auto-top-up configs:', error.message);
+                showNotification(`Failed to load auto-top-up configs: ${error.message}`, 'error');
             }
-        }, []);
+        }, [showNotification]);
 
         const loadAutoTopUpEvents = useCallback(async () => {
             setEventsLoading(true);
@@ -1585,11 +1731,11 @@
                 const data = await api.fetchAutoTopUpEvents();
                 setAutoTopUpEvents(data || []);
             } catch (error) {
-                console.error('Failed to load auto-top-up events:', error.message);
+                showNotification(`Failed to load auto-top-up events: ${error.message}`, 'error');
             } finally {
                 setEventsLoading(false);
             }
-        }, []);
+        }, [showNotification]);
 
         useEffect(() => {
             const loadInitialData = async () => {
@@ -1606,6 +1752,9 @@
                     }
                     if (config && config.gateways) {
                         setGateways(config.gateways);
+                    }
+                    if (config && config.auth_required) {
+                        setAuthRequired(true);
                     }
                     await Promise.all([
                         loadApplications(currentNetwork),
@@ -1794,6 +1943,8 @@
                     onToggleAutoRefresh={toggleAutoRefresh}
                     onNetworkClick={() => setNetworkModalOpen(true)}
                     onStakeNewApp={handleOpenStakeNewApp}
+                    authRequired={authRequired}
+                    onAuthClick={() => setAuthModalOpen(true)}
                 />
 
                 <main className="max-w-screen-2xl mx-auto px-6 py-8">
@@ -1887,6 +2038,12 @@
                     networks={availableNetworks}
                     currentNetwork={currentNetwork}
                     onSelect={handleNetworkSelect}
+                />
+
+                <AuthTokenModal
+                    isOpen={authModalOpen}
+                    onClose={() => setAuthModalOpen(false)}
+                    onSubmit={handleAuthSubmit}
                 />
 
                 {notification && (

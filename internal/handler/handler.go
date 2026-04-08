@@ -518,8 +518,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		gateways[name] = net.Gateways
 	}
 	respondWithJSON(w, http.StatusOK, map[string]interface{}{
-		"thresholds": s.Config.Config.Thresholds,
-		"gateways":   gateways,
+		"thresholds":    s.Config.Config.Thresholds,
+		"gateways":      gateways,
+		"auth_required": s.Config.Config.Auth.Enabled,
 	})
 }
 

@@ -10,6 +10,8 @@ services:
       - PORT=9999
       - CONFIG_FILE=/app/config.yaml
       - DATA_DIR=/app/data
+      # - ALLOWED_ORIGINS=https://sam.example.com
+      # - AUTH_TOKEN=your-secret-token-here
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:9999/health"]
       interval: 30s
