@@ -16,6 +16,10 @@ All notable changes to SAM (Simple AppStakes Manager) are documented in this fil
 - **Tailwind SRI** — Subresource integrity hash added for Tailwind CDN script
 - **API request timeouts** — Frontend fetch calls use AbortController with 15s timeout for reads, 60s for writes
 
+### Changed
+
+- **Auto top-up cadence** — worker tick interval reduced from 5 minutes to 3 minutes. Current mainnet block time is ~70s, so 3 min covers ~2.5 blocks and stays comfortably within a single session, letting top-ups react sooner to stake drawdown.
+
 ### Fixed
 
 - **Silent background load failures** — Bank account, auto-top-up config, and auto-top-up event load errors now show user-visible notifications instead of logging to console only

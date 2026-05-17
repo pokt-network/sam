@@ -177,7 +177,7 @@ Auto top-up automatically maintains application stakes above a minimum threshold
 3. Set the **target amount** — stake will be increased to this level
 4. Enable the toggle and save
 
-The background worker checks all enabled applications every 5 minutes. When a top-up is triggered:
+The background worker checks all enabled applications every 3 minutes (~2.5 blocks at the current ~70s block time). When a top-up is triggered:
 
 1. The worker queries the app's current stake and liquid balance
 2. If the liquid balance doesn't cover the needed amount, the difference is funded from the bank
@@ -352,7 +352,7 @@ web/index.html                → React 18 SPA (Babel + TailwindCSS via CDN)
 - Application data is fetched in parallel using goroutines
 - In-memory cache per network with 1-minute TTL
 - Auto top-up configs stored in `autotopup.json` (no database required)
-- Background worker checks stakes every 5 minutes and performs fund + upstake as needed
+- Background worker checks stakes every 3 minutes and performs fund + upstake as needed
 - New applications staked from the UI are automatically added to `config.yaml`
 
 ## Running the Tests

@@ -58,9 +58,10 @@ func NewWorker(store *Store, cfg *config.Config, client AppQuerier, executor TxE
 }
 
 // Run starts the worker loop. It blocks until ctx is cancelled.
-// Runs an immediate check on startup, then every 5 minutes.
+// Runs an immediate check on startup, then every 3 minutes (~2.5 blocks
+// at the current ~70s block time, comfortably within a single session).
 func (w *Worker) Run(ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Minute)
+	ticker := time.NewTicker(3 * time.Minute)
 	defer ticker.Stop()
 
 	w.Logger.Info("auto-top-up worker started")

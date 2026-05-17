@@ -100,5 +100,5 @@ When adding features, fixing bugs, or making notable changes, update `CHANGELOG.
 - All amounts in the backend use uPOKT (int64); frontend converts to POKT for display
 - No database — blockchain state via API/CLI, auto top-up configs in `autotopup.json`
 - New staked apps are persisted to `config.yaml` via targeted line insertion (preserves comments/formatting)
-- Auto top-up worker runs every 5 minutes; uses fund-then-upstake sequence from bank account
+- Auto top-up worker runs every 3 minutes; uses fund-then-upstake sequence from bank account
 - Smart funding: worker skips the fund step if app's liquid balance already covers the needed amount
