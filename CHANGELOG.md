@@ -6,6 +6,8 @@ All notable changes to SAM (Simple AppStakes Manager) are documented in this fil
 
 ### Added
 
+- **Unstake feature (backend + UI)** — `POST /api/applications/{address}/unstake` begins the unbonding process. After the unbonding period (~1–2h on mainnet), the staked POKT is automatically returned to the application's liquid balance and the on-chain entry is removed; the tracking row in `config.yaml` is **kept** so the app can be re-staked from the same UI row. UI adds a red unstake button on each app row/card, a destructive-action confirm modal (requires typing `UNSTAKE`) that explains the unbonding timeline, and disables Upstake/Delegate/Unstake while an app is `UNBONDING` or `NOT_FOUND`.
+- **Application status field** — The `Application` model now exposes `status` (`STAKED` / `UNBONDING` / `NOT_FOUND`) and `unstake_session_end_height`. List endpoint returns a stub row for apps that 404 (never staked, or fully unbonded and removed from chain state) so tracking persists across stake/unstake/restake cycles. Auto-top-up worker now skips apps that are not in `STAKED` status.
 - **Configurable bind address** — `BIND_ADDR` env var sets which interface the HTTP server listens on; defaults to `127.0.0.1` (loopback-only) for secure-by-default bare-binary use. Docker and Helm set `BIND_ADDR=0.0.0.0` so the container/pod is reachable via port mapping/Service.
 - **Configurable CORS origins** — `ALLOWED_ORIGINS` env var accepts comma-separated origins for production domains; falls back to localhost when unset
 - **API authentication** — Optional bearer token auth for write endpoints (stake, upstake, fund, delegate, auto-top-up); configured via `auth.token` in config.yaml or `AUTH_TOKEN` env var

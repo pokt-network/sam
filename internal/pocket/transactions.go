@@ -102,6 +102,32 @@ func (e *Executor) UpstakeApplication(appAddress, network string, amount int64, 
 	return e.RunTx(args...)
 }
 
+// UnstakeApplication begins the unbonding process for an application. After
+// the unbonding period (~1 session on mainnet, ~1–2h), the staked POKT is
+// returned to the application's liquid balance automatically and the on-chain
+// entry is removed.
+func (e *Executor) UnstakeApplication(appAddress, network, rpcEndpoint string) (*models.TransactionResponse, error) {
+	e.Logger.Info("unstaking application", "address", appAddress, "network", network)
+
+	args := []string{
+		"tx", "application", "unstake-application",
+		"--from", appAddress,
+		"--node", rpcEndpoint,
+		"--chain-id", network,
+		"--yes",
+		"--gas=auto",
+		"--fees=1upokt",
+		"--output", "json",
+	}
+
+	if e.Config.Config.KeyringBackend != "" {
+		args = append(args, "--keyring-backend", e.Config.Config.KeyringBackend)
+	}
+
+	e.Logger.Debug("unstake command", "args", args)
+	return e.RunTx(args...)
+}
+
 // DelegateToGateway delegates an application to a gateway.
 func (e *Executor) DelegateToGateway(appAddress, gatewayAddress, network, rpcEndpoint string) (*models.TransactionResponse, error) {
 	e.Logger.Info("delegating to gateway", "app", appAddress, "gateway", gatewayAddress)

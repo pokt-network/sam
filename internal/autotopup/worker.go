@@ -138,6 +138,16 @@ func (w *Worker) processApp(ctx context.Context, network, address string, cfg mo
 
 	event.PreviousStake = app.Stake
 
+	// Skip apps that are not actively staked. UNBONDING apps cannot be
+	// upstaked (protocol rejects), and NOT_FOUND apps have nothing to top up
+	// (either never staked or already finished unbonding — config tracking
+	// row is kept, but a fresh stake-application tx is required to restart).
+	if app.Status != models.AppStatusStaked {
+		w.Logger.Debug("auto-top-up: app not in STAKED status, skipping",
+			"address", address, "status", app.Status)
+		return
+	}
+
 	if app.Stake >= cfg.TriggerThreshold {
 		w.Logger.Debug("auto-top-up: stake above threshold, skipping",
 			"address", address, "stake", app.Stake, "threshold", cfg.TriggerThreshold)

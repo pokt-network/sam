@@ -58,8 +58,9 @@ func (s *Server) handleGetApplications(w http.ResponseWriter, r *http.Request) {
 	s.Logger.Info("querying applications in parallel via API", "count", len(networkConfig.Applications))
 
 	type result struct {
-		app *models.Application
-		err error
+		addr string
+		app  *models.Application
+		err  error
 	}
 
 	results := make(chan result, len(networkConfig.Applications))
@@ -68,19 +69,26 @@ func (s *Server) handleGetApplications(w http.ResponseWriter, r *http.Request) {
 		go func(addr string) {
 			defer func() {
 				if r := recover(); r != nil {
-					results <- result{err: fmt.Errorf("panic querying application %s: %v", addr, r)}
+					results <- result{addr: addr, err: fmt.Errorf("panic querying application %s: %v", addr, r)}
 				}
 			}()
 			app, err := s.Client.QueryApplication(addr, networkConfig.APIEndpoint, network)
-			results <- result{app: app, err: err}
+			results <- result{addr: addr, app: app, err: err}
 		}(appAddress)
 	}
 
-	var applications []models.Application
+	applications := make([]models.Application, 0, len(networkConfig.Applications))
 	for i := 0; i < len(networkConfig.Applications); i++ {
 		res := <-results
 		if res.err != nil {
-			s.Logger.Error("failed to query application", "error", res.err)
+			// Keep the tracking row visible even when the API call fails so the
+			// app can still be re-staked / re-funded from the same UI row.
+			s.Logger.Error("failed to query application", "address", res.addr, "error", res.err)
+			applications = append(applications, models.Application{
+				Address: res.addr,
+				Network: network,
+				Status:  models.AppStatusNotFound,
+			})
 			continue
 		}
 		applications = append(applications, *res.app)
@@ -205,6 +213,41 @@ func (s *Server) handleUpstake(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.Logger.Error("upstake error", "error", err)
 		respondWithError(w, http.StatusInternalServerError, "upstake operation failed")
+		return
+	}
+
+	s.AppCache.Delete(network)
+	s.BankCache.Delete(network)
+
+	respondWithJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleUnstake(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	address := vars["address"]
+
+	if err := validate.Address(address); err != nil {
+		respondWithError(w, http.StatusBadRequest, "invalid address format")
+		return
+	}
+
+	network := r.URL.Query().Get("network")
+	if network == "" {
+		network = "pocket"
+	}
+
+	networkConfig, ok := s.Config.Config.Networks[network]
+	if !ok {
+		respondWithError(w, http.StatusBadRequest, "invalid network")
+		return
+	}
+
+	s.Logger.Info("unstaking", "address", address, "network", network)
+
+	result, err := s.Executor.UnstakeApplication(address, network, networkConfig.RPCEndpoint)
+	if err != nil {
+		s.Logger.Error("unstake error", "error", err)
+		respondWithError(w, http.StatusInternalServerError, "unstake operation failed")
 		return
 	}
 

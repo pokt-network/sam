@@ -92,7 +92,19 @@ func (c *Client) QueryApplication(address, apiEndpoint, network string) (*models
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("application not found: %s", address)
+		// App is either never-staked or fully unbonded (poktroll removes it from
+		// state after the unbonding period). Return a stub so the tracking row
+		// stays visible in the UI; the user can re-stake from the same row.
+		balance, balanceErr := c.QueryBalance(address, apiEndpoint)
+		if balanceErr != nil {
+			c.Logger.Warn("failed to query balance for not-found app", "address", address, "error", balanceErr)
+		}
+		return &models.Application{
+			Address:       address,
+			Network:       network,
+			Status:        models.AppStatusNotFound,
+			LiquidBalance: balance,
+		}, nil
 	}
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
@@ -112,6 +124,17 @@ func (c *Client) QueryApplication(address, apiEndpoint, network string) (*models
 	app := &models.Application{
 		Address: address,
 		Network: network,
+		Status:  models.AppStatusStaked,
+	}
+
+	if apiResp.Application.UnstakeSessionEndHeight != "" && apiResp.Application.UnstakeSessionEndHeight != "0" {
+		endHeight, parseErr := strconv.ParseInt(apiResp.Application.UnstakeSessionEndHeight, 10, 64)
+		if parseErr != nil {
+			c.Logger.Warn("failed to parse unstake_session_end_height", "address", address, "error", parseErr)
+		} else if endHeight > 0 {
+			app.UnstakeSessionEndHeight = endHeight
+			app.Status = models.AppStatusUnbonding
+		}
 	}
 
 	if apiResp.Application.Stake != nil {

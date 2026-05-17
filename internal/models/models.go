@@ -2,14 +2,23 @@ package models
 
 import "time"
 
+// Application status values reported to the frontend.
+const (
+	AppStatusStaked    = "STAKED"
+	AppStatusUnbonding = "UNBONDING"
+	AppStatusNotFound  = "NOT_FOUND"
+)
+
 // Application represents a staked Pocket Network application.
 type Application struct {
-	Address       string `json:"address"`
-	ServiceID     string `json:"service_id"`
-	Stake         int64  `json:"stake"`
-	LiquidBalance int64  `json:"liquid_balance"`
-	Gateway       string `json:"gateway"`
-	Network       string `json:"network"`
+	Address                 string `json:"address"`
+	ServiceID               string `json:"service_id"`
+	Stake                   int64  `json:"stake"`
+	LiquidBalance           int64  `json:"liquid_balance"`
+	Gateway                 string `json:"gateway"`
+	Network                 string `json:"network"`
+	Status                  string `json:"status"`
+	UnstakeSessionEndHeight int64  `json:"unstake_session_end_height,omitempty"`
 }
 
 // BankAccount represents a bank account balance on a network.
@@ -44,6 +53,7 @@ type APIApplicationResponse struct {
 		Stake                     *Coin           `json:"stake"`
 		ServiceConfigs            []ServiceConfig `json:"service_configs"`
 		DelegateeGatewayAddresses []string        `json:"delegatee_gateway_addresses"`
+		UnstakeSessionEndHeight   string          `json:"unstake_session_end_height"`
 	} `json:"application"`
 }
 

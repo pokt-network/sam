@@ -93,6 +93,7 @@ func TestProcessApp_FundOnly_NoUpstake(t *testing.T) {
 		app: &models.Application{
 			Address:       testAddr,
 			ServiceID:     "svc1",
+			Status:        models.AppStatusStaked,
 			Stake:         100 * uPOKT,
 			LiquidBalance: 0,
 		},
@@ -136,6 +137,7 @@ func TestProcessApp_MinLiquidBalanceReserve(t *testing.T) {
 		app: &models.Application{
 			Address:       testAddr,
 			ServiceID:     "svc1",
+			Status:        models.AppStatusStaked,
 			Stake:         100 * uPOKT,
 			LiquidBalance: 0,
 		},
@@ -175,6 +177,7 @@ func TestProcessApp_UpstakeWhenLiquidSufficient(t *testing.T) {
 		app: &models.Application{
 			Address:       testAddr,
 			ServiceID:     "svc1",
+			Status:        models.AppStatusStaked,
 			Stake:         100 * uPOKT,
 			LiquidBalance: 110 * uPOKT,
 		},
@@ -215,6 +218,7 @@ func TestProcessApp_PartialLiquidBalance(t *testing.T) {
 		app: &models.Application{
 			Address:       testAddr,
 			ServiceID:     "svc1",
+			Status:        models.AppStatusStaked,
 			Stake:         100 * uPOKT,
 			LiquidBalance: 50 * uPOKT,
 		},
@@ -249,6 +253,7 @@ func TestProcessApp_StakeAboveThreshold_Skips(t *testing.T) {
 		app: &models.Application{
 			Address:   testAddr,
 			ServiceID: "svc1",
+			Status:    models.AppStatusStaked,
 			Stake:     200 * uPOKT,
 		},
 	}
@@ -272,11 +277,75 @@ func TestProcessApp_StakeAboveThreshold_Skips(t *testing.T) {
 	}
 }
 
+func TestProcessApp_SkipsUnbondingApp(t *testing.T) {
+	// App is mid-unbond. Worker must not attempt fund or upstake — protocol
+	// rejects upstake on UNBONDING apps; spamming would just generate errors.
+	client := &mockClient{
+		app: &models.Application{
+			Address:                 testAddr,
+			ServiceID:               "svc1",
+			Status:                  models.AppStatusUnbonding,
+			Stake:                   100 * uPOKT,
+			LiquidBalance:           0,
+			UnstakeSessionEndHeight: 12345,
+		},
+	}
+	executor := &mockExecutor{}
+	w := newTestWorker(t, client, executor)
+
+	cfg := models.AutoTopUpConfig{
+		Enabled:          true,
+		TriggerThreshold: 150 * uPOKT,
+		TargetAmount:     200 * uPOKT,
+	}
+	netCfg := w.Config.Config.Networks[testNetwork]
+
+	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg)
+
+	if len(executor.fundCalls) != 0 {
+		t.Errorf("expected no fund calls for UNBONDING app, got %d", len(executor.fundCalls))
+	}
+	if len(executor.upstakeCalls) != 0 {
+		t.Errorf("expected no upstake calls for UNBONDING app, got %d", len(executor.upstakeCalls))
+	}
+}
+
+func TestProcessApp_SkipsNotFoundApp(t *testing.T) {
+	// App was unbonded and removed from on-chain state. Tracking row persists
+	// in config.yaml but a fresh stake-application tx is required — worker
+	// must not try to fund/upstake.
+	client := &mockClient{
+		app: &models.Application{
+			Address: testAddr,
+			Status:  models.AppStatusNotFound,
+		},
+	}
+	executor := &mockExecutor{}
+	w := newTestWorker(t, client, executor)
+
+	cfg := models.AutoTopUpConfig{
+		Enabled:          true,
+		TriggerThreshold: 150 * uPOKT,
+		TargetAmount:     200 * uPOKT,
+	}
+	netCfg := w.Config.Config.Networks[testNetwork]
+
+	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg)
+
+	if len(executor.fundCalls) != 0 {
+		t.Errorf("expected no fund calls for NOT_FOUND app, got %d", len(executor.fundCalls))
+	}
+	if len(executor.upstakeCalls) != 0 {
+		t.Errorf("expected no upstake calls for NOT_FOUND app, got %d", len(executor.upstakeCalls))
+	}
+}
+
 func TestProcessApp_FundFails_NoUpstake(t *testing.T) {
 	client := &mockClient{
 		app: &models.Application{
 			Address:       testAddr,
 			ServiceID:     "svc1",
+			Status:        models.AppStatusStaked,
 			Stake:         100 * uPOKT,
 			LiquidBalance: 0,
 		},
@@ -313,6 +382,7 @@ func TestProcessApp_ZeroMinLiquid_DefaultsTo1POKT(t *testing.T) {
 		app: &models.Application{
 			Address:       testAddr,
 			ServiceID:     "svc1",
+			Status:        models.AppStatusStaked,
 			Stake:         180 * uPOKT,
 			LiquidBalance: 10 * uPOKT,
 		},

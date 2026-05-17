@@ -75,6 +75,40 @@ func setupRouter(srv *Server) *mux.Router {
 	return r
 }
 
+func TestHandleUnstake_InvalidAddress(t *testing.T) {
+	srv := newTestServer(t)
+	router := setupRouter(srv)
+
+	req := httptest.NewRequest("POST", "/api/applications/invalid/unstake?network=pocket", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+
+	var resp models.ErrorResponse
+	json.NewDecoder(w.Body).Decode(&resp)
+	if resp.Error != "invalid address format" {
+		t.Errorf("error = %q, want 'invalid address format'", resp.Error)
+	}
+}
+
+func TestHandleUnstake_InvalidNetwork(t *testing.T) {
+	srv := newTestServer(t)
+	router := setupRouter(srv)
+
+	req := httptest.NewRequest("POST", "/api/applications/pokt1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/unstake?network=bogus", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
 func TestHandleStakeNewApplication_InvalidAddress(t *testing.T) {
 	srv := newTestServer(t)
 	router := setupRouter(srv)
