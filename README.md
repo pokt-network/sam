@@ -185,6 +185,49 @@ The background worker checks all enabled applications every 3 minutes (~2.5 bloc
 
 Auto top-up configs are persisted in `autotopup.json` and survive server restarts. Recent top-up events can be viewed via the `/api/autotopup/events` endpoint.
 
+#### Bank balance pre-flight + low-balance alerts
+
+At the start of each per-network cycle the worker queries the bank balance once and then tracks a running deduction as it processes apps. If a fund tx would push the running total past the bank balance, the tx is **skipped** (an event is still recorded with an explanatory error) and the per-network result is exposed at `GET /api/autotopup/bank-status`:
+
+```json
+{
+  "pocket": {
+    "network": "pocket",
+    "balance_upokt": 37460030000,
+    "needed_upokt": 50000000000,
+    "sufficient": false,
+    "checked_at": "2026-05-17T16:00:00Z"
+  }
+}
+```
+
+The dashboard's Bank Balance card consumes this snapshot and renders a red `LOW` badge + deficit subtitle whenever `sufficient` is `false`. The snapshot is `{}` until the worker has run at least one cycle.
+
+#### Discord webhook (optional)
+
+If `config.notifications.discord.webhook_url` is set, the worker fires a templated message to Discord on the same low-balance condition. The notifier is **per-network cooldown gated** (default 60 minutes) so a tight bank doesn't spam Discord every 3-minute cycle.
+
+```yaml
+config:
+  notifications:
+    discord:
+      webhook_url: "https://discord.com/api/webhooks/123/abc..."
+      message: "⚠️ SAM bank low on {network}: balance {balance} POKT, need {needed} POKT (deficit {deficit} POKT). Top up {bank_address}."
+      cooldown_minutes: 60
+```
+
+Message placeholders, substituted at send time:
+
+| Placeholder | Value |
+|---|---|
+| `{network}` | Network ID (e.g. `pocket`) |
+| `{balance}` | Current bank balance in POKT |
+| `{needed}` | Total POKT needed for all pending top-ups this cycle |
+| `{deficit}` | Shortfall (`needed - balance`) in POKT |
+| `{bank_address}` | The bank account's `pokt1…` address |
+
+Leave `webhook_url` empty (or omit the whole `notifications` block) to disable. Webhook URLs are validated at startup: they must start with `https://discord.com/api/webhooks/` or `https://discordapp.com/api/webhooks/` — anything else aborts startup so a typo doesn't silently disable the alert.
+
 ## API
 
 All endpoints are prefixed with `/api` unless noted.
@@ -200,6 +243,7 @@ All endpoints are prefixed with `/api` unless noted.
 | `DELETE` | `/api/applications/{address}/autotopup?network=` | Remove auto top-up config |
 | `GET` | `/api/autotopup?network=` | List all auto top-up configs |
 | `GET` | `/api/autotopup/events` | Recent auto top-up activity log |
+| `GET` | `/api/autotopup/bank-status` | Per-network bank-sufficiency snapshot from last worker cycle |
 | `GET` | `/api/bank?network=` | Bank account balance |
 | `GET` | `/api/services?network=` | Available services on the network |
 | `GET` | `/api/networks` | Configured network names |
