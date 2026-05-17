@@ -41,6 +41,7 @@ COPY web/ ./web/
 RUN mkdir -p /app/data && chown -R sam:sam /app
 
 ENV PORT=9999 \
+    BIND_ADDR=0.0.0.0 \
     CONFIG_FILE=/app/config.yaml \
     DATA_DIR=/app/data
 

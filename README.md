@@ -143,6 +143,7 @@ make check-pocketd      # Verify pocketd CLI is in PATH
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `9999` | HTTP server port |
+| `BIND_ADDR` | `127.0.0.1` | Interface to bind (use `0.0.0.0` to listen on all interfaces; Docker/Helm set this automatically) |
 | `CONFIG_FILE` | `config.yaml` | Path to the configuration file |
 | `DATA_DIR` | `.` | Directory for runtime data (`autotopup.json`) |
 

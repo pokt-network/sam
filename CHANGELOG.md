@@ -6,6 +6,7 @@ All notable changes to SAM (Simple AppStakes Manager) are documented in this fil
 
 ### Added
 
+- **Configurable bind address** — `BIND_ADDR` env var sets which interface the HTTP server listens on; defaults to `127.0.0.1` (loopback-only) for secure-by-default bare-binary use. Docker and Helm set `BIND_ADDR=0.0.0.0` so the container/pod is reachable via port mapping/Service.
 - **Configurable CORS origins** — `ALLOWED_ORIGINS` env var accepts comma-separated origins for production domains; falls back to localhost when unset
 - **API authentication** — Optional bearer token auth for write endpoints (stake, upstake, fund, delegate, auto-top-up); configured via `auth.token` in config.yaml or `AUTH_TOKEN` env var
 - **Frontend auth flow** — Token input modal triggered on 401 response; token stored in sessionStorage; lock/unlock indicator in header

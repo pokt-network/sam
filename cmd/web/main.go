@@ -136,9 +136,13 @@ func main() {
 		AllowedHeaders: []string{"Content-Type", "Authorization"},
 	})
 
+	bindAddr := os.Getenv("BIND_ADDR")
+	if bindAddr == "" {
+		bindAddr = "127.0.0.1"
+	}
 	httpServer := &http.Server{
 		Handler:      corsHandler.Handler(r),
-		Addr:         ":" + port,
+		Addr:         bindAddr + ":" + port,
 		WriteTimeout: 30 * time.Second,
 		ReadTimeout:  30 * time.Second,
 	}
@@ -167,6 +171,7 @@ func main() {
 	}()
 
 	logger.Info("starting SAM server",
+		"addr", httpServer.Addr,
 		"port", port,
 		"api", "http://localhost:"+port+"/api",
 		"health", "http://localhost:"+port+"/health",

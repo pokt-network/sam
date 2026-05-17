@@ -64,6 +64,7 @@ affinity: {}
 
 env:
   PORT: "9999"
+  BIND_ADDR: "0.0.0.0"
   # ALLOWED_ORIGINS: "https://sam.example.com"
   # AUTH_TOKEN: "your-secret-token-here"
 

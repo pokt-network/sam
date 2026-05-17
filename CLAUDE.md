@@ -28,6 +28,7 @@ helm lint charts/sam    # Lint Helm chart
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PORT` | `9999` | HTTP server port |
+| `BIND_ADDR` | `127.0.0.1` | Interface to bind HTTP server (use `0.0.0.0` to listen on all interfaces; Docker/Helm set this automatically) |
 | `CONFIG_FILE` | `config.yaml` | Path to config file |
 | `DATA_DIR` | `.` | Directory for `autotopup.json` |
 | `ALLOWED_ORIGINS` | `localhost:PORT` | Comma-separated CORS allowed origins |
