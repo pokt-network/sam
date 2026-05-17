@@ -545,6 +545,10 @@ func (s *Server) handleGetAutoTopUpEvents(w http.ResponseWriter, _ *http.Request
 	respondWithJSON(w, http.StatusOK, events)
 }
 
+func (s *Server) handleGetBankStatus(w http.ResponseWriter, _ *http.Request) {
+	respondWithJSON(w, http.StatusOK, s.Worker.BankStatus())
+}
+
 func (s *Server) handleGetNetworks(w http.ResponseWriter, _ *http.Request) {
 	networks := make([]string, 0, len(s.Config.Config.Networks))
 	for name := range s.Config.Config.Networks {

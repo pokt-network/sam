@@ -15,8 +15,10 @@ import (
 
 // mockClient implements AppQuerier for testing.
 type mockClient struct {
-	app *models.Application
-	err error
+	app         *models.Application
+	err         error
+	bankBalance int64
+	bankErr     error
 }
 
 func (m *mockClient) QueryApplication(address, apiEndpoint, network string) (*models.Application, error) {
@@ -24,6 +26,13 @@ func (m *mockClient) QueryApplication(address, apiEndpoint, network string) (*mo
 		return nil, m.err
 	}
 	return m.app, nil
+}
+
+func (m *mockClient) QueryBalance(address, apiEndpoint string) (int64, error) {
+	if m.bankErr != nil {
+		return 0, m.bankErr
+	}
+	return m.bankBalance, nil
 }
 
 // mockExecutor implements TxExecutor and records the calls made.
@@ -77,7 +86,7 @@ func newTestWorker(t *testing.T, client AppQuerier, executor TxExecutor) *Worker
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	appCache := cache.New[[]models.Application](time.Minute)
 	bankCache := cache.New[models.BankAccount](time.Minute)
-	return NewWorker(store, cfg, client, executor, appCache, bankCache, logger)
+	return NewWorker(store, cfg, client, executor, appCache, bankCache, nil, logger)
 }
 
 const (
@@ -108,7 +117,7 @@ func TestProcessApp_FundOnly_NoUpstake(t *testing.T) {
 	}
 	netCfg := w.Config.Config.Networks[testNetwork]
 
-	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg)
+	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, -1)
 
 	// Fund should be called
 	if len(executor.fundCalls) != 1 {
@@ -153,7 +162,7 @@ func TestProcessApp_MinLiquidBalanceReserve(t *testing.T) {
 	}
 	netCfg := w.Config.Config.Networks[testNetwork]
 
-	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg)
+	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, -1)
 
 	if len(executor.fundCalls) != 1 {
 		t.Fatalf("expected 1 fund call, got %d", len(executor.fundCalls))
@@ -193,7 +202,7 @@ func TestProcessApp_UpstakeWhenLiquidSufficient(t *testing.T) {
 	}
 	netCfg := w.Config.Config.Networks[testNetwork]
 
-	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg)
+	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, -1)
 
 	if len(executor.fundCalls) != 0 {
 		t.Errorf("expected 0 fund calls, got %d", len(executor.fundCalls))
@@ -234,7 +243,7 @@ func TestProcessApp_PartialLiquidBalance(t *testing.T) {
 	}
 	netCfg := w.Config.Config.Networks[testNetwork]
 
-	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg)
+	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, -1)
 
 	if len(executor.fundCalls) != 1 {
 		t.Fatalf("expected 1 fund call, got %d", len(executor.fundCalls))
@@ -267,13 +276,47 @@ func TestProcessApp_StakeAboveThreshold_Skips(t *testing.T) {
 	}
 	netCfg := w.Config.Config.Networks[testNetwork]
 
-	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg)
+	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, -1)
 
 	if len(executor.fundCalls) != 0 {
 		t.Errorf("expected no fund calls when stake above threshold, got %d", len(executor.fundCalls))
 	}
 	if len(executor.upstakeCalls) != 0 {
 		t.Errorf("expected no upstake calls when stake above threshold, got %d", len(executor.upstakeCalls))
+	}
+}
+
+func TestProcessApp_SkipsWhenBankInsufficient(t *testing.T) {
+	// App needs ~101 POKT fund (target 200 - current stake 100 + minLiquid 1
+	// + fee 1, minus liquidBalance 0 = 101 POKT in uPOKT). Bank only has
+	// 50 POKT remaining → worker must skip the fund tx and signal demand
+	// via a negative return value.
+	client := &mockClient{
+		app: &models.Application{
+			Address:       testAddr,
+			ServiceID:     "svc1",
+			Status:        models.AppStatusStaked,
+			Stake:         100 * uPOKT,
+			LiquidBalance: 0,
+		},
+	}
+	executor := &mockExecutor{}
+	w := newTestWorker(t, client, executor)
+
+	cfg := models.AutoTopUpConfig{
+		Enabled:          true,
+		TriggerThreshold: 150 * uPOKT,
+		TargetAmount:     200 * uPOKT,
+	}
+	netCfg := w.Config.Config.Networks[testNetwork]
+
+	consumed := w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, 50*uPOKT)
+
+	if consumed >= 0 {
+		t.Errorf("expected negative return for insufficient bank, got %d", consumed)
+	}
+	if len(executor.fundCalls) != 0 {
+		t.Errorf("expected no fund tx when bank insufficient, got %d", len(executor.fundCalls))
 	}
 }
 
@@ -300,7 +343,7 @@ func TestProcessApp_SkipsUnbondingApp(t *testing.T) {
 	}
 	netCfg := w.Config.Config.Networks[testNetwork]
 
-	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg)
+	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, -1)
 
 	if len(executor.fundCalls) != 0 {
 		t.Errorf("expected no fund calls for UNBONDING app, got %d", len(executor.fundCalls))
@@ -330,7 +373,7 @@ func TestProcessApp_SkipsNotFoundApp(t *testing.T) {
 	}
 	netCfg := w.Config.Config.Networks[testNetwork]
 
-	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg)
+	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, -1)
 
 	if len(executor.fundCalls) != 0 {
 		t.Errorf("expected no fund calls for NOT_FOUND app, got %d", len(executor.fundCalls))
@@ -360,7 +403,7 @@ func TestProcessApp_FundFails_NoUpstake(t *testing.T) {
 	}
 	netCfg := w.Config.Config.Networks[testNetwork]
 
-	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg)
+	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, -1)
 
 	if len(executor.upstakeCalls) != 0 {
 		t.Errorf("expected no upstake calls after fund failure, got %d", len(executor.upstakeCalls))
@@ -398,7 +441,7 @@ func TestProcessApp_ZeroMinLiquid_DefaultsTo1POKT(t *testing.T) {
 	}
 	netCfg := w.Config.Config.Networks[testNetwork]
 
-	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg)
+	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, -1)
 
 	if len(executor.fundCalls) != 1 {
 		t.Fatalf("expected 1 fund call, got %d", len(executor.fundCalls))

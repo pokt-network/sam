@@ -235,6 +235,10 @@
             }, 60000);
             return handleResponse(response, 'Failed to delete auto-top-up config');
         },
+        fetchBankStatus: async () => {
+            const response = await fetchWithTimeout(`${API_BASE_URL}/autotopup/bank-status`, {}, 15000);
+            return handleResponse(response, 'Failed to fetch bank status');
+        },
         fetchAutoTopUpEvents: async () => {
             const response = await fetchWithTimeout(`${API_BASE_URL}/autotopup/events`, {}, 15000);
             return handleResponse(response, 'Failed to fetch auto-top-up events');
@@ -676,7 +680,7 @@
     );
 
     // Stats Panel
-    const StatsPanel = ({ apps, thresholds, bankAccount }) => {
+    const StatsPanel = ({ apps, thresholds, bankAccount, bankStatus }) => {
         const totalStake = apps.reduce((sum, app) => sum + app.stake, 0);
         const totalLiquid = apps.reduce((sum, app) => sum + app.liquid_balance, 0);
         const lowStakeCount = apps.filter(app => getStakeStatus(app.stake, thresholds) === 'danger').length;
@@ -704,17 +708,27 @@
                     </div>
                 </div>
 
-                <div className="gradient-card rounded-2xl p-6 relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-[150px] h-[150px] rounded-full pointer-events-none blur-[40px]" style={heroStyle}></div>
+                <div className={`rounded-2xl p-6 relative overflow-hidden ${bankStatus && !bankStatus.sufficient ? 'low-stake-alert' : 'gradient-card'}`}>
+                    <div className="absolute top-0 right-0 w-[150px] h-[150px] rounded-full pointer-events-none blur-[40px]" style={bankStatus && !bankStatus.sufficient ? {background: 'radial-gradient(circle, rgba(255,59,59,0.3) 0%, transparent 70%)'} : heroStyle}></div>
                     <div className="relative z-10">
-                        <p className="text-white/60 text-sm font-medium mb-2">Bank Balance</p>
-                        <p className="text-3xl font-black text-white">
+                        <div className="flex items-center gap-2 mb-2">
+                            <p className="text-white/60 text-sm font-medium">Bank Balance</p>
+                            {bankStatus && !bankStatus.sufficient && (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold text-white bg-red-500/80" title={`Cannot cover all pending auto top-ups: need ${formatStake(bankStatus.needed_upokt)} POKT, have ${formatStake(bankStatus.balance_upokt)} POKT`}>
+                                    LOW
+                                </span>
+                            )}
+                        </div>
+                        <p className={`text-3xl font-black ${bankStatus && !bankStatus.sufficient ? 'text-red-400' : 'text-white'}`}>
                             {bankAccount ? formatStake(bankAccount.balance) : '...'}
                         </p>
                         {bankAccount && (
                             <p className="text-white/40 text-xs mt-1 truncate" title={bankAccount.address}>
                                 {bankAccount.address.slice(0, 10)}...{bankAccount.address.slice(-6)}
                             </p>
+                        )}
+                        {bankStatus && !bankStatus.sufficient && (
+                            <p className="text-red-400/80 text-xs mt-1">Need {formatStake(bankStatus.needed_upokt)} POKT for pending top-ups</p>
                         )}
                     </div>
                 </div>
@@ -1827,6 +1841,7 @@
         const [gateways, setGateways] = useState({});
         const [autoTopUpConfigs, setAutoTopUpConfigs] = useState({});
         const [autoTopUpEvents, setAutoTopUpEvents] = useState([]);
+        const [bankStatus, setBankStatus] = useState(null);
         const [eventsLoading, setEventsLoading] = useState(false);
         const [authRequired, setAuthRequired] = useState(false);
         const [authModalOpen, setAuthModalOpen] = useState(false);
@@ -1882,6 +1897,16 @@
             }
         }, [showNotification]);
 
+        const loadBankStatus = useCallback(async (network) => {
+            try {
+                const data = await api.fetchBankStatus();
+                setBankStatus((data && data[network]) || null);
+            } catch (error) {
+                // Don't toast — this is an enrichment, not critical state.
+                console.warn('failed to load bank status', error);
+            }
+        }, []);
+
         useEffect(() => {
             const loadInitialData = async () => {
                 try {
@@ -1905,7 +1930,8 @@
                         loadApplications(currentNetwork),
                         loadBankAccount(currentNetwork),
                         loadAutoTopUpConfigs(currentNetwork),
-                        loadAutoTopUpEvents()
+                        loadAutoTopUpEvents(),
+                        loadBankStatus(currentNetwork)
                     ]);
                 } catch (error) {
                     showNotification(`Failed to load data: ${error.message}`, 'error');
@@ -1925,7 +1951,8 @@
                 setBankAccount(bankData);
                 await Promise.all([
                     loadAutoTopUpConfigs(currentNetwork),
-                    loadAutoTopUpEvents()
+                    loadAutoTopUpEvents(),
+                    loadBankStatus(currentNetwork)
                 ]);
                 showNotification('Data refreshed successfully');
             } catch (error) {
@@ -1942,7 +1969,8 @@
                 loadApplications(network),
                 loadBankAccount(network),
                 loadAutoTopUpConfigs(network),
-                loadAutoTopUpEvents()
+                loadAutoTopUpEvents(),
+                loadBankStatus(network)
             ]);
             showNotification(`Switched to ${network}`);
         }, [currentNetwork, loadApplications, loadBankAccount, loadAutoTopUpConfigs, loadAutoTopUpEvents, showNotification]);
@@ -2123,7 +2151,7 @@
                         </>
                     ) : (
                         <>
-                            <StatsPanel apps={filteredApps} thresholds={thresholds} bankAccount={bankAccount} />
+                            <StatsPanel apps={filteredApps} thresholds={thresholds} bankAccount={bankAccount} bankStatus={bankStatus} />
                             <AutoTopUpEventsPanel
                                 events={autoTopUpEvents}
                                 loading={eventsLoading}

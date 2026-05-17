@@ -28,6 +28,17 @@ type BankAccount struct {
 	Network string `json:"network"`
 }
 
+// BankStatus snapshots whether the bank can cover all pending auto top-ups
+// for a network at the last worker cycle. Surfaced to the frontend so the
+// bank balance card can show a "LOW" badge before the bank actually drains.
+type BankStatus struct {
+	Network    string    `json:"network"`
+	Balance    int64     `json:"balance_upokt"`
+	Needed     int64     `json:"needed_upokt"`
+	Sufficient bool      `json:"sufficient"`
+	CheckedAt  time.Time `json:"checked_at"`
+}
+
 // StakeRequest is the JSON body for upstake/fund POST endpoints.
 type StakeRequest struct {
 	Amount float64 `json:"amount"` // In POKT

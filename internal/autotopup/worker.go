@@ -2,6 +2,7 @@ package autotopup
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/pokt-network/sam/internal/cache"
 	"github.com/pokt-network/sam/internal/config"
 	"github.com/pokt-network/sam/internal/models"
+	"github.com/pokt-network/sam/internal/notify"
 )
 
 const (
@@ -17,9 +19,10 @@ const (
 	defaultMinLiquidBalance = int64(1_000_000) // 1 POKT default reserve
 )
 
-// AppQuerier queries application state from the network.
+// AppQuerier queries application state and bank balances from the network.
 type AppQuerier interface {
 	QueryApplication(address, apiEndpoint, network string) (*models.Application, error)
+	QueryBalance(address, apiEndpoint string) (int64, error)
 }
 
 // TxExecutor executes on-chain transactions.
@@ -36,25 +39,67 @@ type Worker struct {
 	Executor  TxExecutor
 	AppCache  *cache.Cache[[]models.Application]
 	BankCache *cache.Cache[models.BankAccount]
+	Notifier  *notify.Discord
 	Logger    *slog.Logger
 
 	mu       sync.Mutex
 	eventsMu sync.Mutex
 	events   []models.AutoTopUpEvent
+
+	// bankStatusMu protects lastBankSufficient.
+	bankStatusMu       sync.RWMutex
+	lastBankSufficient map[string]bankStatus
+}
+
+// bankStatus snapshots whether the bank can cover pending top-ups for a
+// network at the last cycle. Surfaced via BankStatus() for the frontend
+// low-balance badge.
+type bankStatus struct {
+	Balance    int64
+	Needed     int64
+	Sufficient bool
+	CheckedAt  time.Time
 }
 
 // NewWorker creates a new auto-top-up worker.
-func NewWorker(store *Store, cfg *config.Config, client AppQuerier, executor TxExecutor, appCache *cache.Cache[[]models.Application], bankCache *cache.Cache[models.BankAccount], logger *slog.Logger) *Worker {
+func NewWorker(store *Store, cfg *config.Config, client AppQuerier, executor TxExecutor, appCache *cache.Cache[[]models.Application], bankCache *cache.Cache[models.BankAccount], notifier *notify.Discord, logger *slog.Logger) *Worker {
 	return &Worker{
-		Store:     store,
-		Config:    cfg,
-		Client:    client,
-		Executor:  executor,
-		AppCache:  appCache,
-		BankCache: bankCache,
-		Logger:    logger,
-		events:    make([]models.AutoTopUpEvent, 0, maxEvents),
+		Store:              store,
+		Config:             cfg,
+		Client:             client,
+		Executor:           executor,
+		AppCache:           appCache,
+		BankCache:          bankCache,
+		Notifier:           notifier,
+		Logger:             logger,
+		events:             make([]models.AutoTopUpEvent, 0, maxEvents),
+		lastBankSufficient: make(map[string]bankStatus),
 	}
+}
+
+// BankStatus returns the most recent per-network bank sufficiency snapshot
+// (whether the bank can cover all pending auto top-ups). Used by the
+// frontend to render a "LOW" badge on the bank balance card.
+func (w *Worker) BankStatus() map[string]models.BankStatus {
+	w.bankStatusMu.RLock()
+	defer w.bankStatusMu.RUnlock()
+	out := make(map[string]models.BankStatus, len(w.lastBankSufficient))
+	for network, s := range w.lastBankSufficient {
+		out[network] = models.BankStatus{
+			Network:    network,
+			Balance:    s.Balance,
+			Needed:     s.Needed,
+			Sufficient: s.Sufficient,
+			CheckedAt:  s.CheckedAt,
+		}
+	}
+	return out
+}
+
+func (w *Worker) setBankStatus(network string, s bankStatus) {
+	w.bankStatusMu.Lock()
+	w.lastBankSufficient[network] = s
+	w.bankStatusMu.Unlock()
 }
 
 // Run starts the worker loop. It blocks until ctx is cancelled.
@@ -108,19 +153,106 @@ func (w *Worker) RunOnce(ctx context.Context) {
 			continue
 		}
 
-		for address, cfg := range apps {
-			if ctx.Err() != nil {
-				w.Logger.Info("auto-top-up cycle cancelled")
-				return
-			}
-			w.processApp(ctx, network, address, cfg, netCfg)
-		}
+		w.processNetwork(ctx, network, apps, netCfg)
 	}
 
 	w.Logger.Info("auto-top-up cycle complete")
 }
 
-func (w *Worker) processApp(ctx context.Context, network, address string, cfg models.AutoTopUpConfig, netCfg config.NetworkConfig) {
+// processNetwork pre-flights the bank balance once per network and then
+// iterates each app, tracking a running deduction so an early large fund
+// doesn't silently starve later apps. If the running deduction would
+// exceed the bank balance, remaining apps are skipped with a logged WARN
+// and a Discord notification (cooldown-gated) is fired.
+func (w *Worker) processNetwork(ctx context.Context, network string, apps map[string]models.AutoTopUpConfig, netCfg config.NetworkConfig) {
+	bankBalance, bankErr := w.Client.QueryBalance(netCfg.Bank, netCfg.APIEndpoint)
+	if bankErr != nil {
+		w.Logger.Error("auto-top-up: failed to query bank balance — skipping pre-flight",
+			"network", network, "bank", netCfg.Bank, "error", bankErr)
+		// Continue without pre-flight. Per-app fund tx will surface chain
+		// errors if the bank really is empty.
+		for address, cfg := range apps {
+			if ctx.Err() != nil {
+				return
+			}
+			w.processApp(ctx, network, address, cfg, netCfg, -1)
+		}
+		return
+	}
+
+	remaining := bankBalance
+	totalNeeded := int64(0)
+	skipped := false
+
+	for address, cfg := range apps {
+		if ctx.Err() != nil {
+			return
+		}
+		consumed := w.processApp(ctx, network, address, cfg, netCfg, remaining)
+		if consumed < 0 {
+			// Insufficient funds — processApp logged the skip. Track demand
+			// so we can surface the total deficit in the alert.
+			totalNeeded += -consumed
+			skipped = true
+			continue
+		}
+		remaining -= consumed
+		totalNeeded += consumed
+	}
+
+	w.setBankStatus(network, bankStatus{
+		Balance:    bankBalance,
+		Needed:     totalNeeded,
+		Sufficient: !skipped,
+		CheckedAt:  time.Now(),
+	})
+
+	if skipped {
+		deficit := totalNeeded - bankBalance
+		w.Logger.Warn("auto-top-up: bank cannot cover pending top-ups",
+			"network", network,
+			"bank_balance_upokt", bankBalance,
+			"needed_upokt", totalNeeded,
+			"deficit_upokt", deficit,
+		)
+		if w.Notifier.Enabled() {
+			err := w.Notifier.Notify(ctx, network, map[string]string{
+				"network":      network,
+				"balance":      formatPOKT(bankBalance),
+				"needed":       formatPOKT(totalNeeded),
+				"deficit":      formatPOKT(deficit),
+				"bank_address": netCfg.Bank,
+			})
+			if err != nil {
+				w.Logger.Error("auto-top-up: discord notify failed", "network", network, "error", err)
+			}
+		}
+	}
+}
+
+// formatPOKT formats a uPOKT amount as POKT (6 decimal places) for human
+// display in Discord messages.
+func formatPOKT(upokt int64) string {
+	whole := upokt / 1_000_000
+	frac := upokt % 1_000_000
+	if frac == 0 {
+		return fmt.Sprintf("%d", whole)
+	}
+	return fmt.Sprintf("%d.%06d", whole, frac)
+}
+
+// processApp evaluates a single app for top-up.
+//
+// bankRemaining is the running bank balance the caller is willing to spend
+// this cycle. Pass -1 to disable the pre-flight check (e.g. when the bank
+// query itself failed).
+//
+// Return value:
+//
+//	>0  — uPOKT consumed from the bank for the fund tx this cycle
+//	 0  — no spend (skipped, above threshold, or phase-2 upstake)
+//	<0  — insufficient bank funds; absolute value is the uPOKT needed
+func (w *Worker) processApp(ctx context.Context, network, address string, cfg models.AutoTopUpConfig, netCfg config.NetworkConfig, bankRemaining int64) int64 {
 	event := models.AutoTopUpEvent{
 		Timestamp:    time.Now(),
 		Network:      network,
@@ -134,7 +266,7 @@ func (w *Worker) processApp(ctx context.Context, network, address string, cfg mo
 		w.Logger.Error("auto-top-up: failed to query app", "address", address, "error", err)
 		event.Error = err.Error()
 		w.addEvent(event)
-		return
+		return 0
 	}
 
 	event.PreviousStake = app.Stake
@@ -146,18 +278,18 @@ func (w *Worker) processApp(ctx context.Context, network, address string, cfg mo
 	if app.Status != models.AppStatusStaked {
 		w.Logger.Debug("auto-top-up: app not in STAKED status, skipping",
 			"address", address, "status", app.Status)
-		return
+		return 0
 	}
 
 	if app.Stake >= cfg.TriggerThreshold {
 		w.Logger.Debug("auto-top-up: stake above threshold, skipping",
 			"address", address, "stake", app.Stake, "threshold", cfg.TriggerThreshold)
-		return
+		return 0
 	}
 
 	amountNeeded := cfg.TargetAmount - app.Stake
 	if amountNeeded <= 0 {
-		return
+		return 0
 	}
 
 	w.Logger.Info("auto-top-up: app needs top-up",
@@ -177,6 +309,19 @@ func (w *Worker) processApp(ctx context.Context, network, address string, cfg mo
 	fundAmount := totalLiquidNeeded - app.LiquidBalance
 
 	if fundAmount > 0 {
+		// Pre-flight: skip if the running bank balance can't cover this fund tx.
+		// bankRemaining == -1 means the caller couldn't check, so let the chain
+		// reject the tx itself (preserves prior behavior).
+		if bankRemaining >= 0 && fundAmount > bankRemaining {
+			w.Logger.Warn("auto-top-up: skipping fund — bank balance insufficient",
+				"address", address, "fund_amount_upokt", fundAmount, "bank_remaining_upokt", bankRemaining)
+			event.Phase = "fund"
+			event.FundAmount = fundAmount
+			event.Error = fmt.Sprintf("bank balance insufficient: need %d uPOKT, have %d uPOKT", fundAmount, bankRemaining)
+			w.addEvent(event)
+			return -fundAmount
+		}
+
 		// Phase 1: Fund the app. Return and let the next cycle handle the upstake.
 		event.Phase = "fund"
 		event.FundAmount = fundAmount
@@ -188,7 +333,7 @@ func (w *Worker) processApp(ctx context.Context, network, address string, cfg mo
 			w.Logger.Error("auto-top-up: fund failed", "address", address, "error", errMsg)
 			event.Error = errMsg
 			w.addEvent(event)
-			return
+			return 0
 		}
 		event.FundTxHash = fundResult.TxHash
 		event.Success = true
@@ -197,7 +342,7 @@ func (w *Worker) processApp(ctx context.Context, network, address string, cfg mo
 		w.BankCache.Delete(network)
 		w.Logger.Info("auto-top-up: funded, upstake will happen next cycle",
 			"address", address, "tx_hash", fundResult.TxHash)
-		return
+		return fundAmount
 	}
 
 	// Phase 2: App has enough liquid (from a previous fund or existing balance). Upstake now.
@@ -210,7 +355,7 @@ func (w *Worker) processApp(ctx context.Context, network, address string, cfg mo
 		w.Logger.Error("auto-top-up: upstake failed", "address", address, "error", errMsg)
 		event.Error = errMsg
 		w.addEvent(event)
-		return
+		return 0
 	}
 	event.StakeTxHash = stakeResult.TxHash
 
@@ -223,6 +368,7 @@ func (w *Worker) processApp(ctx context.Context, network, address string, cfg mo
 
 	w.Logger.Info("auto-top-up: upstake complete",
 		"address", address, "network", network, "tx_hash", stakeResult.TxHash)
+	return 0
 }
 
 // txErrMsg returns an error message if the transaction failed, or "" on success.

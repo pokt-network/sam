@@ -55,7 +55,7 @@ func newTestServer(t *testing.T) *Server {
 	appCache := cache.New[[]models.Application](1 * time.Minute)
 	bankCache := cache.New[models.BankAccount](1 * time.Minute)
 
-	worker := autotopup.NewWorker(store, cfg, client, executor, appCache, bankCache, logger)
+	worker := autotopup.NewWorker(store, cfg, client, executor, appCache, bankCache, nil, logger)
 
 	return &Server{
 		Config:    cfg,

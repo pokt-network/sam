@@ -18,6 +18,27 @@ config:
     warning_threshold: 2000000000  # 2000 POKT in uPOKT
     danger_threshold: 1000000000   # 1000 POKT in uPOKT
 
+  # Optional outbound notifications.
+  # Discord webhook is fired when the auto top-up worker detects that the
+  # bank account cannot cover the pending top-up demand for a network.
+  # Leave webhook_url empty to disable.
+  #
+  # Message placeholders (substituted at send time):
+  #   {network}      — network ID (e.g. "pocket")
+  #   {balance}      — current bank balance in POKT
+  #   {needed}       — total POKT needed for pending top-ups
+  #   {deficit}      — shortfall (needed - balance) in POKT
+  #   {bank_address} — the bank's pokt1… address
+  #
+  # cooldown_minutes prevents spamming the same alert on every cycle; the
+  # notifier remembers the last-sent time per network and skips re-sending
+  # inside the window. Defaults to 60.
+  notifications:
+    discord:
+      webhook_url: ""
+      message: "⚠️ SAM bank low on {network}: balance {balance} POKT, need {needed} POKT (deficit {deficit} POKT). Top up {bank_address}."
+      cooldown_minutes: 60
+
   networks:
     pocket:
       # Public mainnet endpoints — replace with your own if you have dedicated infrastructure

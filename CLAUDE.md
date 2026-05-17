@@ -64,6 +64,7 @@ Run with custom port: `PORT=8080 ./sam`
 | DELETE | `/api/applications/{address}/autotopup?network=` | Remove auto top-up config |
 | GET | `/api/autotopup?network=` | List auto top-up configs |
 | GET | `/api/autotopup/events` | Recent auto top-up events |
+| GET | `/api/autotopup/bank-status` | Per-network bank-sufficiency snapshot from last worker cycle (powers low-balance badge + Discord alerts) |
 | GET | `/api/bank?network=` | Bank account balance (cached) |
 | GET | `/api/services?network=` | Available services on network |
 | GET | `/api/networks` | Configured networks |

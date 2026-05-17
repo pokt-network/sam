@@ -28,12 +28,38 @@ type AuthConfig struct {
 	Token   string `yaml:"token"`
 }
 
+// DiscordNotifierConfig configures the optional Discord webhook used to
+// alert when the bank account cannot cover pending auto top-ups.
+//
+// Message supports the following placeholders, replaced at send time:
+//
+//	{network}      — network ID (e.g. "pocket")
+//	{balance}      — current bank balance in POKT
+//	{needed}       — total POKT needed for pending auto top-ups
+//	{deficit}      — shortfall (needed - balance) in POKT
+//	{bank_address} — the bank's pokt1… address
+//
+// CooldownMinutes prevents spamming the same alert every cycle; the
+// notifier remembers the last-sent time per network and skips re-sending
+// inside the window. Defaults to 60 if zero.
+type DiscordNotifierConfig struct {
+	WebhookURL      string `yaml:"webhook_url"`
+	Message         string `yaml:"message"`
+	CooldownMinutes int    `yaml:"cooldown_minutes"`
+}
+
+// NotificationsConfig groups optional outbound notification channels.
+type NotificationsConfig struct {
+	Discord DiscordNotifierConfig `yaml:"discord"`
+}
+
 // Config is the top-level configuration loaded from config.yaml.
 type Config struct {
 	Config struct {
 		KeyringBackend string                   `yaml:"keyring-backend"`
 		PocketdHome    string                   `yaml:"pocketd-home"`
 		Auth           AuthConfig               `yaml:"auth"`
+		Notifications  NotificationsConfig      `yaml:"notifications"`
 		Thresholds     Thresholds               `yaml:"thresholds"`
 		Networks       map[string]NetworkConfig `yaml:"networks"`
 	} `yaml:"config"`
@@ -229,6 +255,13 @@ func SaveApplicationAddress(configPath, network, address string) error {
 func validateConfig(cfg *Config) error {
 	if len(cfg.Config.Networks) == 0 {
 		return fmt.Errorf("at least one network must be configured")
+	}
+
+	if url := cfg.Config.Notifications.Discord.WebhookURL; url != "" {
+		if !strings.HasPrefix(url, "https://discord.com/api/webhooks/") &&
+			!strings.HasPrefix(url, "https://discordapp.com/api/webhooks/") {
+			return fmt.Errorf("notifications.discord.webhook_url: must be an https://discord.com/api/webhooks/... URL")
+		}
 	}
 
 	if cfg.Config.KeyringBackend != "" {

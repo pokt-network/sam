@@ -20,6 +20,7 @@ func (s *Server) SetupRoutes(r *mux.Router) {
 	api.HandleFunc("/services", s.handleGetServices).Methods("GET")
 	api.HandleFunc("/autotopup", s.handleGetAutoTopUp).Methods("GET")
 	api.HandleFunc("/autotopup/events", s.handleGetAutoTopUpEvents).Methods("GET")
+	api.HandleFunc("/autotopup/bank-status", s.handleGetBankStatus).Methods("GET")
 	api.HandleFunc("/config", s.handleGetConfig).Methods("GET")
 
 	// Write endpoints (protected when auth is enabled).

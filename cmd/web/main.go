@@ -21,6 +21,7 @@ import (
 	"github.com/pokt-network/sam/internal/config"
 	"github.com/pokt-network/sam/internal/handler"
 	"github.com/pokt-network/sam/internal/models"
+	"github.com/pokt-network/sam/internal/notify"
 	"github.com/pokt-network/sam/internal/pocket"
 )
 
@@ -88,7 +89,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	worker := autotopup.NewWorker(topUpStore, cfg, client, executor, appCache, bankCache, logger)
+	discordCfg := cfg.Config.Notifications.Discord
+	discordNotifier := notify.NewDiscord(
+		discordCfg.WebhookURL,
+		discordCfg.Message,
+		time.Duration(discordCfg.CooldownMinutes)*time.Minute,
+		logger,
+	)
+	if discordNotifier.Enabled() {
+		logger.Info("discord notifier enabled", "cooldown_minutes", discordCfg.CooldownMinutes)
+	}
+
+	worker := autotopup.NewWorker(topUpStore, cfg, client, executor, appCache, bankCache, discordNotifier, logger)
 
 	srv := &handler.Server{
 		Config:     cfg,
