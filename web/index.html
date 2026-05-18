@@ -37,13 +37,18 @@
         .gradient-card {
             background: linear-gradient(135deg, rgba(0, 210, 255, 0.1) 0%, rgba(58, 123, 213, 0.1) 100%);
             border: 1px solid rgba(0, 210, 255, 0.2);
-            backdrop-filter: blur(10px);
         }
 
         .glass-card {
             background: rgba(255, 255, 255, 0.03);
             border: 1px solid rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(20px);
+        }
+
+        /* Tell the browser internals of a scrolling table don't affect the
+           page layout, so it can skip recomputing off-screen rows during
+           scroll. Significant FPS win with 70+ rows. */
+        .perf-contain {
+            contain: layout style paint;
         }
 
         .btn-primary {
@@ -827,7 +832,7 @@
                                 <p className="text-sm">No auto top-up events yet</p>
                             </div>
                         ) : (
-                            <div className="space-y-2 max-h-[28rem] overflow-y-auto pr-2">
+                            <div className="space-y-2 max-h-[28rem] overflow-y-auto pr-2 perf-contain">
                                 {displayEvents.map((event, idx) => {
                                     const status = getEventStatus(event);
                                     return (
@@ -925,7 +930,7 @@
     };
 
     // Application Row
-    const ApplicationRow = ({ app, isSelected, onSelect, onUpstake, onFund, onDelegate, onUnstake, onReturnLiquid, onAutoTopUp, thresholds, operationLoading, hasAutoTopUp, autoTopUpConfig }) => {
+    const ApplicationRow = React.memo(({ app, isSelected, onSelect, onUpstake, onFund, onDelegate, onUnstake, onReturnLiquid, onAutoTopUp, thresholds, operationLoading, hasAutoTopUp, autoTopUpConfig }) => {
         const status = getStakeStatus(app.stake, thresholds);
         const isUpstaking = operationLoading.type === 'upstake' && operationLoading.address === app.address;
         const isFunding = operationLoading.type === 'fund' && operationLoading.address === app.address;
@@ -1053,7 +1058,7 @@
                 </td>
             </tr>
         );
-    };
+    });
 
     // Skeleton Table (loading placeholder)
     const SkeletonTable = () => (
@@ -1066,7 +1071,7 @@
     );
 
     // Mobile Application Card
-    const ApplicationCard = ({ app, onUpstake, onFund, onDelegate, onUnstake, onReturnLiquid, onAutoTopUp, thresholds, operationLoading, hasAutoTopUp, autoTopUpConfig }) => {
+    const ApplicationCard = React.memo(({ app, onUpstake, onFund, onDelegate, onUnstake, onReturnLiquid, onAutoTopUp, thresholds, operationLoading, hasAutoTopUp, autoTopUpConfig }) => {
         const status = getStakeStatus(app.stake, thresholds);
         const isUpstaking = operationLoading.type === 'upstake' && operationLoading.address === app.address;
         const isFunding = operationLoading.type === 'fund' && operationLoading.address === app.address;
@@ -1159,13 +1164,13 @@
                 </div>
             </div>
         );
-    };
+    });
 
     // Applications Table
     const ApplicationsTable = ({ apps, selectedAddress, onSelect, onUpstake, onFund, onDelegate, onUnstake, onReturnLiquid, onAutoTopUp, thresholds, sortField, sortDirection, onSort, operationLoading, autoTopUpConfigs }) => (
         <div>
             {/* Desktop table */}
-            <div className="hidden lg:block glass-card rounded-2xl overflow-x-auto">
+            <div className="hidden lg:block glass-card rounded-2xl overflow-x-auto perf-contain">
                 <table className="w-full">
                     <thead className="bg-white/5">
                     <tr>
