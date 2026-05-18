@@ -683,7 +683,10 @@
     const StatsPanel = ({ apps, thresholds, bankAccount, bankStatus }) => {
         const totalStake = apps.reduce((sum, app) => sum + app.stake, 0);
         const totalLiquid = apps.reduce((sum, app) => sum + app.liquid_balance, 0);
-        const lowStakeCount = apps.filter(app => getStakeStatus(app.stake, thresholds) === 'danger').length;
+        const lowStakeCount = apps.filter(app => {
+            const s = getStakeStatus(app.stake, thresholds);
+            return s === 'danger' || s === 'warning';
+        }).length;
 
         const heroStyle = {
             background: 'radial-gradient(circle, rgba(0, 210, 255, 0.3) 0%, rgba(58, 123, 213, 0.1) 50%, transparent 100%)'
@@ -959,7 +962,13 @@
                     )}
                 </td>
                 <td className="px-6 py-4 hidden lg:table-cell">
-                    <span className="text-sm font-mono text-white/60">{app.gateway}</span>
+                    {app.gateway ? (
+                        <span className="text-sm font-mono text-white/60" title={app.gateway}>
+                            {app.gateway.slice(0, 10)}…{app.gateway.slice(-6)}
+                        </span>
+                    ) : (
+                        <span className="text-sm text-white/30">—</span>
+                    )}
                 </td>
                 <td className="px-3 py-4">
                     <div className="flex items-center justify-end gap-1">
