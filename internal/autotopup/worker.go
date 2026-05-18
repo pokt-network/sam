@@ -302,14 +302,6 @@ func (w *Worker) processApp(ctx context.Context, network, address string, cfg mo
 
 	// Two-phase approach: fund in one cycle, upstake in the next.
 	// This lets the fund tx confirm on-chain before attempting the upstake.
-	//
-	// Phase 2 fires as soon as liquid >= amountNeeded. The upstake itself
-	// only needs amountNeeded uPOKT to move from liquid into stake; the
-	// reserve is nice-to-have for *future* fees, not a precondition. When
-	// funding, we still overshoot by txFee + minLiquid so the reserve
-	// lands. Decoupling these two thresholds prevents a fund-loop when
-	// post-fund liquid ends up a few uPOKT below totalLiquidNeeded
-	// (chain/api sync lag, in-flight claims, anything nibbling at liquid).
 	minLiquid := cfg.MinLiquidBalance
 	if minLiquid <= 0 {
 		minLiquid = defaultMinLiquidBalance
@@ -317,16 +309,7 @@ func (w *Worker) processApp(ctx context.Context, network, address string, cfg mo
 	totalLiquidNeeded := amountNeeded + txFee + minLiquid
 	fundAmount := totalLiquidNeeded - app.LiquidBalance
 
-	w.Logger.Debug("auto-top-up: fund math",
-		"address", address,
-		"liquid_upokt", app.LiquidBalance,
-		"amount_needed_upokt", amountNeeded,
-		"total_liquid_target_upokt", totalLiquidNeeded,
-		"fund_amount_upokt", fundAmount,
-		"upstake_trigger_met", app.LiquidBalance >= amountNeeded,
-	)
-
-	if app.LiquidBalance < amountNeeded {
+	if fundAmount > 0 {
 		// Pre-flight: skip if the running bank balance can't cover this fund tx.
 		// bankRemaining == -1 means the caller couldn't check, so let the chain
 		// reject the tx itself (preserves prior behavior).

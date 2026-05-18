@@ -12,26 +12,19 @@ import (
 //
 // --unordered + --timeout-duration replace the default ordered-by-sequence
 // model with replay protection by tx hash + a window. This sidesteps the
-// "account sequence mismatch, expected N, got M" race entirely.
+// "account sequence mismatch, expected N, got M" race entirely: two
+// concurrent self-sends from the same signer can land in the same block
+// with no sequence tracking required.
 //
-// --gas=auto + --gas-adjustment 1.5 keeps the auto-simulation path (so we
-// don't maintain a per-op gas table) but multiplies the simulated value
-// by 1.5× to leave headroom. pocketd's simulator does not model the
-// unordered-tx nonce-dedup store write — production hit this with
-// simulated 50,959 vs actual 51,137 → code 11 out of gas. With 1.5×
-// adjustment, simulated 50,959 becomes 76,438 broadcast gas: comfortable
-// margin for the unordered store write plus any future chain growth.
-const (
-	txTimeoutDuration = "5m"
-	txGasAdjustment   = "1.5"
-)
+// --gas=auto remains because it's compatible with --unordered (no sequence
+// to override) and saves us maintaining a per-op gas budget table.
+const txTimeoutDuration = "5m"
 
 // commonTxFlags returns the flag set every tx shares.
 func (e *Executor) commonTxFlags() []string {
 	flags := []string{
 		"--yes",
 		"--gas=auto",
-		"--gas-adjustment", txGasAdjustment,
 		"--fees=1upokt",
 		"--output", "json",
 		"--unordered",

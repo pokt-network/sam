@@ -286,45 +286,6 @@ func TestProcessApp_StakeAboveThreshold_Skips(t *testing.T) {
 	}
 }
 
-func TestProcessApp_LiquidCoversAmountNeeded_UpstakesNotRefunds(t *testing.T) {
-	// Regression test for the fund-loop bug seen in production
-	// 2026-05-18 20:55-20:58: app's liquid covered the stake delta
-	// (amountNeeded) but landed a hair below totalLiquidNeeded (which
-	// includes a small reserve), so the worker re-funded ~1000 POKT
-	// every cycle instead of upstaking. Phase 2 should fire as soon as
-	// liquid >= amountNeeded.
-	//
-	// Setup: stake=100, target=200 -> amountNeeded=100 POKT. Liquid is
-	// exactly amountNeeded. Previously this took phase 1; now phase 2.
-	client := &mockClient{
-		app: &models.Application{
-			Address:       testAddr,
-			ServiceID:     "svc1",
-			Status:        models.AppStatusStaked,
-			Stake:         100 * uPOKT,
-			LiquidBalance: 100 * uPOKT,
-		},
-	}
-	executor := &mockExecutor{}
-	w := newTestWorker(t, client, executor)
-
-	cfg := models.AutoTopUpConfig{
-		Enabled:          true,
-		TriggerThreshold: 150 * uPOKT,
-		TargetAmount:     200 * uPOKT,
-	}
-	netCfg := w.Config.Config.Networks[testNetwork]
-
-	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, -1)
-
-	if len(executor.fundCalls) != 0 {
-		t.Errorf("expected no fund calls when liquid >= amountNeeded, got %d", len(executor.fundCalls))
-	}
-	if len(executor.upstakeCalls) != 1 {
-		t.Errorf("expected 1 upstake call when liquid >= amountNeeded, got %d", len(executor.upstakeCalls))
-	}
-}
-
 func TestProcessApp_SkipsWhenBankInsufficient(t *testing.T) {
 	// App needs ~101 POKT fund (target 200 - current stake 100 + minLiquid 1
 	// + fee 1, minus liquidBalance 0 = 101 POKT in uPOKT). Bank only has
