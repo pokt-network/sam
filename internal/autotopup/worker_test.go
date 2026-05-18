@@ -19,6 +19,8 @@ type mockClient struct {
 	err         error
 	bankBalance int64
 	bankErr     error
+	account     *models.AccountInfo
+	accountErr  error
 }
 
 func (m *mockClient) QueryApplication(address, apiEndpoint, network string) (*models.Application, error) {
@@ -35,6 +37,16 @@ func (m *mockClient) QueryBalance(address, apiEndpoint string) (int64, error) {
 	return m.bankBalance, nil
 }
 
+func (m *mockClient) QueryAccount(address, apiEndpoint string) (*models.AccountInfo, error) {
+	if m.accountErr != nil {
+		return nil, m.accountErr
+	}
+	if m.account != nil {
+		return m.account, nil
+	}
+	return &models.AccountInfo{AccountNumber: 1, Sequence: 1}, nil
+}
+
 // mockExecutor implements TxExecutor and records the calls made.
 type mockExecutor struct {
 	fundCalls    []fundCall
@@ -46,6 +58,7 @@ type mockExecutor struct {
 type fundCall struct {
 	AppAddress string
 	Amount     int64
+	Sequence   uint64
 }
 
 type upstakeCall struct {
@@ -59,6 +72,14 @@ func (m *mockExecutor) FundApplication(appAddress, bankAddress, network string, 
 		return nil, m.fundErr
 	}
 	return &models.TransactionResponse{TxHash: "fund-hash", Success: true}, nil
+}
+
+func (m *mockExecutor) FundApplicationWithSequence(appAddress, bankAddress, network string, amount int64, rpcEndpoint string, accountNumber, sequence uint64) (*models.TransactionResponse, uint64, error) {
+	m.fundCalls = append(m.fundCalls, fundCall{AppAddress: appAddress, Amount: amount, Sequence: sequence})
+	if m.fundErr != nil {
+		return nil, sequence, m.fundErr
+	}
+	return &models.TransactionResponse{TxHash: "fund-hash", Success: true}, sequence, nil
 }
 
 func (m *mockExecutor) UpstakeApplication(appAddress, network string, amount int64, rpcEndpoint, apiEndpoint string) (*models.TransactionResponse, error) {
@@ -117,7 +138,7 @@ func TestProcessApp_FundOnly_NoUpstake(t *testing.T) {
 	}
 	netCfg := w.Config.Config.Networks[testNetwork]
 
-	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, -1)
+	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, -1, nil)
 
 	// Fund should be called
 	if len(executor.fundCalls) != 1 {
@@ -162,7 +183,7 @@ func TestProcessApp_MinLiquidBalanceReserve(t *testing.T) {
 	}
 	netCfg := w.Config.Config.Networks[testNetwork]
 
-	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, -1)
+	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, -1, nil)
 
 	if len(executor.fundCalls) != 1 {
 		t.Fatalf("expected 1 fund call, got %d", len(executor.fundCalls))
@@ -202,7 +223,7 @@ func TestProcessApp_UpstakeWhenLiquidSufficient(t *testing.T) {
 	}
 	netCfg := w.Config.Config.Networks[testNetwork]
 
-	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, -1)
+	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, -1, nil)
 
 	if len(executor.fundCalls) != 0 {
 		t.Errorf("expected 0 fund calls, got %d", len(executor.fundCalls))
@@ -243,7 +264,7 @@ func TestProcessApp_PartialLiquidBalance(t *testing.T) {
 	}
 	netCfg := w.Config.Config.Networks[testNetwork]
 
-	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, -1)
+	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, -1, nil)
 
 	if len(executor.fundCalls) != 1 {
 		t.Fatalf("expected 1 fund call, got %d", len(executor.fundCalls))
@@ -276,7 +297,7 @@ func TestProcessApp_StakeAboveThreshold_Skips(t *testing.T) {
 	}
 	netCfg := w.Config.Config.Networks[testNetwork]
 
-	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, -1)
+	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, -1, nil)
 
 	if len(executor.fundCalls) != 0 {
 		t.Errorf("expected no fund calls when stake above threshold, got %d", len(executor.fundCalls))
@@ -284,6 +305,81 @@ func TestProcessApp_StakeAboveThreshold_Skips(t *testing.T) {
 	if len(executor.upstakeCalls) != 0 {
 		t.Errorf("expected no upstake calls when stake above threshold, got %d", len(executor.upstakeCalls))
 	}
+}
+
+func TestProcessNetwork_ThreadsSequenceAcrossFundTxs(t *testing.T) {
+	// Three apps in one cycle, each needs to be funded from the bank.
+	// All three fund txs must carry consecutive sequence numbers so they
+	// don't race on the chain's account sequence.
+	const (
+		addrA = "pokt1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		addrB = "pokt1bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+		addrC = "pokt1cccccccccccccccccccccccccccccccccccccc"
+	)
+
+	apps := map[string]*models.Application{
+		addrA: {Address: addrA, ServiceID: "svc1", Status: models.AppStatusStaked, Stake: 100 * uPOKT, LiquidBalance: 0},
+		addrB: {Address: addrB, ServiceID: "svc2", Status: models.AppStatusStaked, Stake: 100 * uPOKT, LiquidBalance: 0},
+		addrC: {Address: addrC, ServiceID: "svc3", Status: models.AppStatusStaked, Stake: 100 * uPOKT, LiquidBalance: 0},
+	}
+
+	client := &multiAppClient{apps: apps, bankBalance: 10_000 * uPOKT, account: &models.AccountInfo{AccountNumber: 42, Sequence: 987}}
+	executor := &mockExecutor{}
+	w := newTestWorker(t, client, executor)
+
+	cfgs := map[string]models.AutoTopUpConfig{
+		addrA: {Enabled: true, TriggerThreshold: 150 * uPOKT, TargetAmount: 200 * uPOKT},
+		addrB: {Enabled: true, TriggerThreshold: 150 * uPOKT, TargetAmount: 200 * uPOKT},
+		addrC: {Enabled: true, TriggerThreshold: 150 * uPOKT, TargetAmount: 200 * uPOKT},
+	}
+	netCfg := w.Config.Config.Networks[testNetwork]
+	w.processNetwork(context.Background(), testNetwork, cfgs, netCfg)
+
+	if len(executor.fundCalls) != 3 {
+		t.Fatalf("expected 3 fund calls, got %d", len(executor.fundCalls))
+	}
+
+	// Map order is non-deterministic, but the 3 sequences must form the
+	// set {987, 988, 989} with no repeats — the actual property we care
+	// about is "no in-cycle collisions".
+	seen := make(map[uint64]bool)
+	for _, c := range executor.fundCalls {
+		if c.Sequence < 987 || c.Sequence > 989 {
+			t.Errorf("fund call sequence out of range: got %d, want one of {987,988,989}", c.Sequence)
+		}
+		if seen[c.Sequence] {
+			t.Errorf("sequence %d reused — cycle would race", c.Sequence)
+		}
+		seen[c.Sequence] = true
+	}
+}
+
+// multiAppClient is a mockClient variant that returns a different
+// Application per address, so a cycle iterating multiple apps doesn't
+// collapse them all into one fixture.
+type multiAppClient struct {
+	apps        map[string]*models.Application
+	bankBalance int64
+	account     *models.AccountInfo
+}
+
+func (m *multiAppClient) QueryApplication(address, apiEndpoint, network string) (*models.Application, error) {
+	app, ok := m.apps[address]
+	if !ok {
+		return &models.Application{Address: address, Status: models.AppStatusNotFound}, nil
+	}
+	return app, nil
+}
+
+func (m *multiAppClient) QueryBalance(address, apiEndpoint string) (int64, error) {
+	return m.bankBalance, nil
+}
+
+func (m *multiAppClient) QueryAccount(address, apiEndpoint string) (*models.AccountInfo, error) {
+	if m.account != nil {
+		return m.account, nil
+	}
+	return &models.AccountInfo{AccountNumber: 1, Sequence: 1}, nil
 }
 
 func TestProcessApp_SkipsWhenBankInsufficient(t *testing.T) {
@@ -310,7 +406,7 @@ func TestProcessApp_SkipsWhenBankInsufficient(t *testing.T) {
 	}
 	netCfg := w.Config.Config.Networks[testNetwork]
 
-	consumed := w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, 50*uPOKT)
+	consumed := w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, 50*uPOKT, nil)
 
 	if consumed >= 0 {
 		t.Errorf("expected negative return for insufficient bank, got %d", consumed)
@@ -343,7 +439,7 @@ func TestProcessApp_SkipsUnbondingApp(t *testing.T) {
 	}
 	netCfg := w.Config.Config.Networks[testNetwork]
 
-	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, -1)
+	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, -1, nil)
 
 	if len(executor.fundCalls) != 0 {
 		t.Errorf("expected no fund calls for UNBONDING app, got %d", len(executor.fundCalls))
@@ -373,7 +469,7 @@ func TestProcessApp_SkipsNotFoundApp(t *testing.T) {
 	}
 	netCfg := w.Config.Config.Networks[testNetwork]
 
-	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, -1)
+	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, -1, nil)
 
 	if len(executor.fundCalls) != 0 {
 		t.Errorf("expected no fund calls for NOT_FOUND app, got %d", len(executor.fundCalls))
@@ -403,7 +499,7 @@ func TestProcessApp_FundFails_NoUpstake(t *testing.T) {
 	}
 	netCfg := w.Config.Config.Networks[testNetwork]
 
-	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, -1)
+	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, -1, nil)
 
 	if len(executor.upstakeCalls) != 0 {
 		t.Errorf("expected no upstake calls after fund failure, got %d", len(executor.upstakeCalls))
@@ -441,7 +537,7 @@ func TestProcessApp_ZeroMinLiquid_DefaultsTo1POKT(t *testing.T) {
 	}
 	netCfg := w.Config.Config.Networks[testNetwork]
 
-	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, -1)
+	w.processApp(context.Background(), testNetwork, testAddr, cfg, netCfg, -1, nil)
 
 	if len(executor.fundCalls) != 1 {
 		t.Fatalf("expected 1 fund call, got %d", len(executor.fundCalls))

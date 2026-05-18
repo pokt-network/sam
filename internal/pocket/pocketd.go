@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 
 	"github.com/pokt-network/sam/internal/config"
@@ -63,6 +64,92 @@ func (e *Executor) buildEnv() []string {
 		env = append(env, "KEYRING_BACKEND="+e.Config.Config.KeyringBackend)
 	}
 	return env
+}
+
+// RunTxWithSeqRetry executes a pocketd transaction command and, if it
+// fails with a Cosmos "account sequence mismatch" error, queries the
+// signer's account from the chain and retries once with explicit
+// --account-number and --sequence flags. This catches any race where
+// two writes from the same signer are in flight near-simultaneously
+// (worker cycles overlapping, manual API call racing the worker,
+// admin-issued shell tx racing SAM, etc.) without requiring callers to
+// pre-fetch per-signer sequence state.
+//
+// signer is the bech32 address whose key signs this tx (the --from
+// value). network is used to look up the apiEndpoint for QueryAccount.
+//
+// Caller may pass args that already contain --account-number and/or
+// --sequence (e.g. the auto top-up worker's sequenced-fund path); on
+// retry those flags are replaced with the chain-reported expected
+// values rather than appended a second time.
+func (e *Executor) RunTxWithSeqRetry(signer, network string, args []string) (*models.TransactionResponse, error) {
+	resp, err := e.RunTx(args...)
+
+	errStr := ""
+	if err != nil {
+		errStr = err.Error()
+	} else if resp != nil && !resp.Success {
+		errStr = resp.Message
+	}
+	expected, ok := ParseExpectedSequence(errStr)
+	if !ok {
+		return resp, err
+	}
+
+	netCfg, ok := e.Config.Config.Networks[network]
+	if !ok {
+		e.Logger.Warn("tx sequence mismatch but network not in config — cannot retry",
+			"signer", signer, "network", network, "expected", expected)
+		return resp, err
+	}
+
+	if e.Client == nil {
+		e.Logger.Warn("tx sequence mismatch but Executor has no Client — cannot retry",
+			"signer", signer, "network", network)
+		return resp, err
+	}
+
+	acc, accErr := e.Client.QueryAccount(signer, netCfg.APIEndpoint)
+	if accErr != nil {
+		e.Logger.Error("tx sequence mismatch but account lookup for retry failed",
+			"signer", signer, "network", network, "expected", expected, "error", accErr)
+		return resp, err
+	}
+
+	// The chain just told us the expected sequence is `expected`. Prefer
+	// that over what QueryAccount returned (the lookup is racy too, and
+	// the error message is authoritative). Use account_number from the
+	// account query.
+	retryArgs := setOrAppendFlag(args, "--account-number", strconv.FormatUint(acc.AccountNumber, 10))
+	retryArgs = setOrAppendFlag(retryArgs, "--sequence", strconv.FormatUint(expected, 10))
+
+	e.Logger.Warn("retrying tx after sequence mismatch",
+		"signer", signer, "network", network,
+		"account_number", acc.AccountNumber, "sequence", expected)
+
+	return e.RunTx(retryArgs...)
+}
+
+// setOrAppendFlag returns a copy of args with `flag value` either
+// replacing the existing occurrence or appended to the end. Used by the
+// seq-mismatch retry to avoid duplicate --account-number/--sequence
+// flags when the caller already supplied them.
+func setOrAppendFlag(args []string, flag, value string) []string {
+	out := make([]string, 0, len(args)+2)
+	replaced := false
+	for i := 0; i < len(args); i++ {
+		if args[i] == flag {
+			out = append(out, flag, value)
+			i++ // skip old value
+			replaced = true
+			continue
+		}
+		out = append(out, args[i])
+	}
+	if !replaced {
+		out = append(out, flag, value)
+	}
+	return out
 }
 
 // RunTx executes a pocketd transaction command and parses the result.
