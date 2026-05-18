@@ -19,25 +19,15 @@ const (
 	defaultMinLiquidBalance = int64(1_000_000) // 1 POKT default reserve
 )
 
-// AppQuerier queries application state, bank balances, and account info
-// from the network.
+// AppQuerier queries application state and bank balances from the network.
 type AppQuerier interface {
 	QueryApplication(address, apiEndpoint, network string) (*models.Application, error)
 	QueryBalance(address, apiEndpoint string) (int64, error)
-	QueryAccount(address, apiEndpoint string) (*models.AccountInfo, error)
 }
 
 // TxExecutor executes on-chain transactions.
-//
-// FundApplicationWithSequence is the version the worker uses for in-cycle
-// bank-signed fund txs: it takes an explicit account_number + sequence so
-// successive fund txs in the same cycle don't race on the chain's
-// sequence counter. Returns (response, sequenceActuallyUsed, error) — the
-// caller increments its local sequence based on usedSeq so the on-mismatch
-// retry doesn't desync the cycle.
 type TxExecutor interface {
 	FundApplication(appAddress, bankAddress, network string, amount int64, rpcEndpoint string) (*models.TransactionResponse, error)
-	FundApplicationWithSequence(appAddress, bankAddress, network string, amount int64, rpcEndpoint string, accountNumber, sequence uint64) (*models.TransactionResponse, uint64, error)
 	UpstakeApplication(appAddress, network string, amount int64, rpcEndpoint, apiEndpoint string) (*models.TransactionResponse, error)
 }
 
@@ -179,30 +169,15 @@ func (w *Worker) processNetwork(ctx context.Context, network string, apps map[st
 	if bankErr != nil {
 		w.Logger.Error("auto-top-up: failed to query bank balance — skipping pre-flight",
 			"network", network, "bank", netCfg.Bank, "error", bankErr)
-		// Continue without pre-flight or sequence threading. Per-app fund
-		// tx will surface chain errors if the bank really is empty, and
-		// nil bankAccount tells processApp to fall back to the
-		// (sequence-racing) plain FundApplication path.
+		// Continue without pre-flight. Per-app fund tx will surface chain
+		// errors if the bank really is empty.
 		for address, cfg := range apps {
 			if ctx.Err() != nil {
 				return
 			}
-			w.processApp(ctx, network, address, cfg, netCfg, -1, nil)
+			w.processApp(ctx, network, address, cfg, netCfg, -1)
 		}
 		return
-	}
-
-	// Pre-fetch the bank's account_number + sequence once per cycle, then
-	// thread an explicit, locally-incremented sequence through each fund
-	// tx so we don't race ourselves on the chain's sequence counter.
-	bankAccount, accErr := w.Client.QueryAccount(netCfg.Bank, netCfg.APIEndpoint)
-	if accErr != nil {
-		w.Logger.Error("auto-top-up: failed to query bank account info — fund txs will race on sequence this cycle",
-			"network", network, "bank", netCfg.Bank, "error", accErr)
-		// bankAccount stays nil; processApp falls back to FundApplication.
-	} else {
-		w.Logger.Debug("auto-top-up: pre-fetched bank account info",
-			"network", network, "account_number", bankAccount.AccountNumber, "sequence", bankAccount.Sequence)
 	}
 
 	remaining := bankBalance
@@ -213,7 +188,7 @@ func (w *Worker) processNetwork(ctx context.Context, network string, apps map[st
 		if ctx.Err() != nil {
 			return
 		}
-		consumed := w.processApp(ctx, network, address, cfg, netCfg, remaining, bankAccount)
+		consumed := w.processApp(ctx, network, address, cfg, netCfg, remaining)
 		if consumed < 0 {
 			// Insufficient funds — processApp logged the skip. Track demand
 			// so we can surface the total deficit in the alert.
@@ -272,18 +247,12 @@ func formatPOKT(upokt int64) string {
 // this cycle. Pass -1 to disable the pre-flight check (e.g. when the bank
 // query itself failed).
 //
-// bankAccount carries the bank's account_number plus a mutable sequence
-// counter shared across the cycle. When non-nil, fund txs use the
-// sequence-explicit path and bump bankAccount.Sequence on each broadcast.
-// When nil (account-info query failed), the legacy FundApplication is
-// used and may race on the chain sequence — best-effort fallback.
-//
 // Return value:
 //
 //	>0  — uPOKT consumed from the bank for the fund tx this cycle
 //	 0  — no spend (skipped, above threshold, or phase-2 upstake)
 //	<0  — insufficient bank funds; absolute value is the uPOKT needed
-func (w *Worker) processApp(ctx context.Context, network, address string, cfg models.AutoTopUpConfig, netCfg config.NetworkConfig, bankRemaining int64, bankAccount *models.AccountInfo) int64 {
+func (w *Worker) processApp(ctx context.Context, network, address string, cfg models.AutoTopUpConfig, netCfg config.NetworkConfig, bankRemaining int64) int64 {
 	event := models.AutoTopUpEvent{
 		Timestamp:    time.Now(),
 		Network:      network,
@@ -360,25 +329,7 @@ func (w *Worker) processApp(ctx context.Context, network, address string, cfg mo
 		w.Logger.Info("auto-top-up: funding app from bank",
 			"address", address, "fund_amount", fundAmount)
 
-		var (
-			fundResult *models.TransactionResponse
-			err        error
-		)
-		if bankAccount != nil {
-			var usedSeq uint64
-			fundResult, usedSeq, err = w.Executor.FundApplicationWithSequence(
-				address, netCfg.Bank, network, fundAmount, netCfg.RPCEndpoint,
-				bankAccount.AccountNumber, bankAccount.Sequence,
-			)
-			// Bump local sequence whenever pocketd actually broadcast (got a
-			// non-empty txhash back). Even an on-chain failure consumes the
-			// sequence — only a pre-broadcast error leaves it unused.
-			if fundResult != nil && fundResult.TxHash != "" {
-				bankAccount.Sequence = usedSeq + 1
-			}
-		} else {
-			fundResult, err = w.Executor.FundApplication(address, netCfg.Bank, network, fundAmount, netCfg.RPCEndpoint)
-		}
+		fundResult, err := w.Executor.FundApplication(address, netCfg.Bank, network, fundAmount, netCfg.RPCEndpoint)
 		if errMsg := txErrMsg("fund failed", fundResult, err); errMsg != "" {
 			w.Logger.Error("auto-top-up: fund failed", "address", address, "error", errMsg)
 			event.Error = errMsg

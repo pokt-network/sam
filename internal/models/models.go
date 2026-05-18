@@ -72,27 +72,6 @@ type APIBalanceResponse struct {
 	Balances []Coin `json:"balances"`
 }
 
-// APIAccountResponse is the response from /cosmos/auth/v1beta1/accounts/{addr}.
-// Used by the auto top-up worker to fetch the bank's account_number +
-// sequence up-front so it can stamp each fund tx in a cycle with an
-// explicit, locally-incremented sequence (avoids the in-cycle race where
-// every pocketd tx re-queries the same on-chain sequence before any are
-// included in a block).
-type APIAccountResponse struct {
-	Account struct {
-		Type          string `json:"@type"`
-		Address       string `json:"address"`
-		AccountNumber string `json:"account_number"`
-		Sequence      string `json:"sequence"`
-	} `json:"account"`
-}
-
-// AccountInfo is the parsed account_number + sequence pair.
-type AccountInfo struct {
-	AccountNumber uint64
-	Sequence      uint64
-}
-
 type Coin struct {
 	Denom  string `json:"denom"`
 	Amount string `json:"amount"`
