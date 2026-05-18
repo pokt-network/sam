@@ -80,6 +80,51 @@ func (c *Client) QueryBalance(address, apiEndpoint string) (int64, error) {
 	return 0, nil
 }
 
+// QueryAccount fetches account_number and sequence for an address from
+// the chain's REST API. The worker uses this to stamp each bank-signed
+// fund tx in a cycle with an explicit sequence, since pocketd's default
+// "broadcast in sync mode" returns before block inclusion and rapid
+// back-to-back txs would otherwise race on the same on-chain sequence.
+func (c *Client) QueryAccount(address, apiEndpoint string) (*models.AccountInfo, error) {
+	url := fmt.Sprintf("%s/cosmos/auth/v1beta1/accounts/%s", apiEndpoint, address)
+	c.Logger.Debug("querying account", "url", url)
+
+	resp, err := c.HTTP.Get(url)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query account API: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
+		return nil, fmt.Errorf("account API returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBody))
+	if err != nil {
+		return nil, fmt.Errorf("failed to read account response: %w", err)
+	}
+
+	var accResp models.APIAccountResponse
+	if err := json.Unmarshal(body, &accResp); err != nil {
+		return nil, fmt.Errorf("failed to parse account response: %w", err)
+	}
+
+	accountNumber, err := strconv.ParseUint(accResp.Account.AccountNumber, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse account_number %q: %w", accResp.Account.AccountNumber, err)
+	}
+	sequence, err := strconv.ParseUint(accResp.Account.Sequence, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse sequence %q: %w", accResp.Account.Sequence, err)
+	}
+
+	return &models.AccountInfo{
+		AccountNumber: accountNumber,
+		Sequence:      sequence,
+	}, nil
+}
+
 // QueryApplication fetches application details and its liquid balance.
 func (c *Client) QueryApplication(address, apiEndpoint, network string) (*models.Application, error) {
 	url := fmt.Sprintf("%s/pokt-network/poktroll/application/application/%s", apiEndpoint, address)

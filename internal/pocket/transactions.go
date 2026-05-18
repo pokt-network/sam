@@ -3,10 +3,31 @@ package pocket
 import (
 	"fmt"
 	"os"
+	"regexp"
+	"strconv"
 
 	"github.com/pokt-network/sam/internal/models"
 	"github.com/pokt-network/sam/internal/validate"
 )
+
+// seqMismatchRE captures both expected and got from a Cosmos SDK
+// "account sequence mismatch, expected N, got M: incorrect account sequence" error.
+var seqMismatchRE = regexp.MustCompile(`account sequence mismatch, expected (\d+), got (\d+)`)
+
+// ParseExpectedSequence extracts the "expected" sequence from a Cosmos
+// sequence-mismatch error string. Returns (expected, true) on match,
+// (0, false) otherwise.
+func ParseExpectedSequence(s string) (uint64, bool) {
+	m := seqMismatchRE.FindStringSubmatch(s)
+	if len(m) != 3 {
+		return 0, false
+	}
+	n, err := strconv.ParseUint(m[1], 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
+}
 
 // StakeNewApplication stakes a new application with the given service ID and amount (in uPOKT).
 func (e *Executor) StakeNewApplication(appAddress, serviceID, network string, amountUpokt int64, rpcEndpoint string) (*models.TransactionResponse, error) {
@@ -153,6 +174,10 @@ func (e *Executor) DelegateToGateway(appAddress, gatewayAddress, network, rpcEnd
 }
 
 // FundApplication sends POKT from the bank to an application address.
+// Used for one-shot manual funds via the /api/applications/{addr}/fund
+// endpoint where there's no in-flight neighbor tx that could race on the
+// bank's sequence. The auto top-up worker uses FundApplicationWithSequence
+// instead, which threads an explicit sequence through the cycle.
 func (e *Executor) FundApplication(appAddress, bankAddress, network string, amount int64, rpcEndpoint string) (*models.TransactionResponse, error) {
 	amountStr := fmt.Sprintf("%dupokt", amount)
 
@@ -177,6 +202,72 @@ func (e *Executor) FundApplication(appAddress, bankAddress, network string, amou
 
 	e.Logger.Debug("fund command", "args", args)
 	return e.RunTx(args...)
+}
+
+// FundApplicationWithSequence is FundApplication with explicit
+// --account-number + --sequence flags, used by the auto top-up worker so
+// multiple bank-signed fund txs in the same cycle don't race against the
+// chain's account sequence.
+//
+// On a "account sequence mismatch, expected N, got M" failure, this
+// function retries once with N parsed from the error message. The retry
+// covers the case where an external tx from the bank (e.g. an admin
+// running pocketd in a shell) desyncs the worker's locally-incremented
+// sequence.
+func (e *Executor) FundApplicationWithSequence(
+	appAddress, bankAddress, network string, amount int64, rpcEndpoint string,
+	accountNumber, sequence uint64,
+) (*models.TransactionResponse, uint64, error) {
+	amountStr := fmt.Sprintf("%dupokt", amount)
+
+	e.Logger.Info("funding application (sequenced)",
+		"address", appAddress, "amount", amountStr,
+		"account_number", accountNumber, "sequence", sequence)
+
+	buildArgs := func(seq uint64) []string {
+		args := []string{
+			"tx", "bank", "send",
+			bankAddress,
+			appAddress,
+			amountStr,
+			"--node", rpcEndpoint,
+			"--chain-id", network,
+			"--yes",
+			"--gas=auto",
+			"--fees=1upokt",
+			"--output", "json",
+			"--account-number", strconv.FormatUint(accountNumber, 10),
+			"--sequence", strconv.FormatUint(seq, 10),
+		}
+		if e.Config.Config.KeyringBackend != "" {
+			args = append(args, "--keyring-backend", e.Config.Config.KeyringBackend)
+		}
+		return args
+	}
+
+	usedSeq := sequence
+	args := buildArgs(usedSeq)
+	e.Logger.Debug("fund command (sequenced)", "args", args)
+	resp, err := e.RunTx(args...)
+
+	// Retry once on sequence mismatch. The error can surface either as a
+	// Go-level error (pocketd CLI exits non-zero) or in resp.Message
+	// (pocketd returns JSON with a non-zero code).
+	errStr := ""
+	if err != nil {
+		errStr = err.Error()
+	} else if resp != nil && !resp.Success {
+		errStr = resp.Message
+	}
+	if expected, ok := ParseExpectedSequence(errStr); ok && expected != usedSeq {
+		e.Logger.Warn("auto-top-up: sequence mismatch — retrying with chain-reported expected sequence",
+			"address", appAddress, "had", usedSeq, "expected", expected)
+		usedSeq = expected
+		args = buildArgs(usedSeq)
+		resp, err = e.RunTx(args...)
+	}
+
+	return resp, usedSeq, err
 }
 
 // writeTempStakeConfig writes a temporary YAML config for stake-application and returns its path.
