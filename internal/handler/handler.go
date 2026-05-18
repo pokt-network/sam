@@ -219,6 +219,7 @@ func (s *Server) handleUpstake(w http.ResponseWriter, r *http.Request) {
 	s.AppCache.Delete(network)
 	s.BankCache.Delete(network)
 
+	s.Logger.Info("upstake submitted", "address", address, "network", network, "tx_hash", result.TxHash, "amount_upokt", amountUpokt)
 	respondWithJSON(w, http.StatusOK, result)
 }
 
@@ -254,6 +255,7 @@ func (s *Server) handleUnstake(w http.ResponseWriter, r *http.Request) {
 	s.AppCache.Delete(network)
 	s.BankCache.Delete(network)
 
+	s.Logger.Info("unstake submitted", "address", address, "network", network, "tx_hash", result.TxHash)
 	respondWithJSON(w, http.StatusOK, result)
 }
 
@@ -302,6 +304,7 @@ func (s *Server) handleFund(w http.ResponseWriter, r *http.Request) {
 	s.AppCache.Delete(network)
 	s.BankCache.Delete(network)
 
+	s.Logger.Info("fund submitted", "address", address, "network", network, "tx_hash", result.TxHash, "amount_upokt", amountUpokt)
 	respondWithJSON(w, http.StatusOK, result)
 }
 
@@ -348,6 +351,7 @@ func (s *Server) handleDelegate(w http.ResponseWriter, r *http.Request) {
 
 	s.AppCache.Delete(network)
 
+	s.Logger.Info("delegate submitted", "address", address, "network", network, "tx_hash", result.TxHash, "gateway", req.GatewayAddress)
 	respondWithJSON(w, http.StatusOK, result)
 }
 
@@ -436,6 +440,7 @@ func (s *Server) handleStakeNewApplication(w http.ResponseWriter, r *http.Reques
 	s.AppCache.Delete(network)
 	s.BankCache.Delete(network)
 
+	s.Logger.Info("stake-new submitted", "address", req.Address, "network", network, "tx_hash", result.TxHash, "service_id", req.ServiceID, "amount_upokt", amountUpokt)
 	respondWithJSON(w, http.StatusOK, result)
 }
 

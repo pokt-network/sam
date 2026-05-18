@@ -19,6 +19,7 @@ All notable changes to SAM (Simple AppStakes Manager) are documented in this fil
 
 ### Changed
 
+- **Tx hash logged on manual write endpoints** — `/applications/stake`, `/upstake`, `/fund`, `/delegate`, `/unstake` now log the on-chain `tx_hash` on success alongside the address/network. Previously only the auto top-up worker recorded the hash, which made "did my manual tx land?" answerable only by re-querying chain state.
 - **Auto top-up cadence** — worker tick interval reduced from 5 minutes to 3 minutes. Current mainnet block time is ~70s, so 3 min covers ~2.5 blocks and stays comfortably within a single session, letting top-ups react sooner to stake drawdown.
 
 ### Fixed
