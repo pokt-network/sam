@@ -181,6 +181,13 @@
             }, 60000);
             return handleResponse(response, 'Failed to fund application');
         },
+        returnLiquid: async (address, network) => {
+            const response = await fetchWithTimeout(`${API_BASE_URL}/applications/${address}/return-liquid?network=${network}`, {
+                method: 'POST',
+                headers: getAuthHeaders('POST')
+            }, 60000);
+            return handleResponse(response, 'Failed to return liquid balance');
+        },
         unstakeApplication: async (address, network) => {
             const response = await fetchWithTimeout(`${API_BASE_URL}/applications/${address}/unstake?network=${network}`, {
                 method: 'POST',
@@ -348,6 +355,14 @@
         <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
             <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+        </svg>
+    );
+
+    const ArrowDownToBankIcon = ({ size = 20 }) => (
+        <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 3v12"></path>
+            <polyline points="6 9 12 15 18 9"></polyline>
+            <line x1="3" y1="21" x2="21" y2="21"></line>
         </svg>
     );
 
@@ -910,15 +925,17 @@
     };
 
     // Application Row
-    const ApplicationRow = ({ app, isSelected, onSelect, onUpstake, onFund, onDelegate, onUnstake, onAutoTopUp, thresholds, operationLoading, hasAutoTopUp, autoTopUpConfig }) => {
+    const ApplicationRow = ({ app, isSelected, onSelect, onUpstake, onFund, onDelegate, onUnstake, onReturnLiquid, onAutoTopUp, thresholds, operationLoading, hasAutoTopUp, autoTopUpConfig }) => {
         const status = getStakeStatus(app.stake, thresholds);
         const isUpstaking = operationLoading.type === 'upstake' && operationLoading.address === app.address;
         const isFunding = operationLoading.type === 'fund' && operationLoading.address === app.address;
         const isDelegating = operationLoading.type === 'delegate' && operationLoading.address === app.address;
         const isUnstaking = operationLoading.type === 'unstake' && operationLoading.address === app.address;
+        const isReturning = operationLoading.type === 'return-liquid' && operationLoading.address === app.address;
         const isUnbonding = app.status === 'UNBONDING';
         const isNotFound = app.status === 'NOT_FOUND';
         const isStaked = !isUnbonding && !isNotFound;
+        const canReturnLiquid = (app.liquid_balance || 0) > 1_000_001;
 
         return (
             <tr
@@ -1006,6 +1023,15 @@
                             {isFunding ? <Loader size={16} /> : <DollarSign size={16} className="text-blue-400" />}
                         </button>
                         <button
+                            onClick={(e) => { e.stopPropagation(); onReturnLiquid(app); }}
+                            disabled={isReturning || !canReturnLiquid}
+                            className="p-2 glass-card hover:bg-white/10 rounded-lg transition-all disabled:opacity-50"
+                            title={canReturnLiquid ? 'Return liquid POKT to bank (leaves 1 POKT for fees)' : 'Liquid balance below 1 POKT reserve — nothing to return'}
+                            aria-label={`Return liquid POKT to bank from ${app.address.slice(0, 10)}`}
+                        >
+                            {isReturning ? <Loader size={16} /> : <ArrowDownToBankIcon size={16} className="text-cyan-400" />}
+                        </button>
+                        <button
                             onClick={(e) => { e.stopPropagation(); onDelegate(app); }}
                             disabled={isDelegating || !isStaked}
                             className="p-2 glass-card hover:bg-white/10 rounded-lg transition-all disabled:opacity-50"
@@ -1040,15 +1066,17 @@
     );
 
     // Mobile Application Card
-    const ApplicationCard = ({ app, onUpstake, onFund, onDelegate, onUnstake, onAutoTopUp, thresholds, operationLoading, hasAutoTopUp, autoTopUpConfig }) => {
+    const ApplicationCard = ({ app, onUpstake, onFund, onDelegate, onUnstake, onReturnLiquid, onAutoTopUp, thresholds, operationLoading, hasAutoTopUp, autoTopUpConfig }) => {
         const status = getStakeStatus(app.stake, thresholds);
         const isUpstaking = operationLoading.type === 'upstake' && operationLoading.address === app.address;
         const isFunding = operationLoading.type === 'fund' && operationLoading.address === app.address;
         const isDelegating = operationLoading.type === 'delegate' && operationLoading.address === app.address;
         const isUnstaking = operationLoading.type === 'unstake' && operationLoading.address === app.address;
+        const isReturning = operationLoading.type === 'return-liquid' && operationLoading.address === app.address;
         const isUnbonding = app.status === 'UNBONDING';
         const isNotFound = app.status === 'NOT_FOUND';
         const isStaked = !isUnbonding && !isNotFound;
+        const canReturnLiquid = (app.liquid_balance || 0) > 1_000_001;
 
         return (
             <div className="glass-card rounded-xl p-4">
@@ -1104,6 +1132,14 @@
                             {isFunding ? <Loader size={14} /> : <DollarSign size={14} className="text-blue-400" />}
                         </button>
                         <button
+                            onClick={() => onReturnLiquid(app)}
+                            disabled={isReturning || !canReturnLiquid}
+                            className="p-1.5 glass-card hover:bg-white/10 rounded-lg transition-all disabled:opacity-50"
+                            aria-label={`Return liquid POKT to bank from ${app.address.slice(0, 10)}`}
+                        >
+                            {isReturning ? <Loader size={14} /> : <ArrowDownToBankIcon size={14} className="text-cyan-400" />}
+                        </button>
+                        <button
                             onClick={() => onDelegate(app)}
                             disabled={isDelegating || !isStaked}
                             className="p-1.5 glass-card hover:bg-white/10 rounded-lg transition-all disabled:opacity-50"
@@ -1126,7 +1162,7 @@
     };
 
     // Applications Table
-    const ApplicationsTable = ({ apps, selectedAddress, onSelect, onUpstake, onFund, onDelegate, onUnstake, onAutoTopUp, thresholds, sortField, sortDirection, onSort, operationLoading, autoTopUpConfigs }) => (
+    const ApplicationsTable = ({ apps, selectedAddress, onSelect, onUpstake, onFund, onDelegate, onUnstake, onReturnLiquid, onAutoTopUp, thresholds, sortField, sortDirection, onSort, operationLoading, autoTopUpConfigs }) => (
         <div>
             {/* Desktop table */}
             <div className="hidden lg:block glass-card rounded-2xl overflow-x-auto">
@@ -1167,6 +1203,7 @@
                                 onFund={onFund}
                                 onDelegate={onDelegate}
                                 onUnstake={onUnstake}
+                                onReturnLiquid={onReturnLiquid}
                                 onAutoTopUp={onAutoTopUp}
                                 thresholds={thresholds}
                                 operationLoading={operationLoading}
@@ -1194,6 +1231,7 @@
                             onFund={onFund}
                             onDelegate={onDelegate}
                             onUnstake={onUnstake}
+                            onReturnLiquid={onReturnLiquid}
                             onAutoTopUp={onAutoTopUp}
                             thresholds={thresholds}
                             operationLoading={operationLoading}
@@ -1444,6 +1482,83 @@
                             >
                                 {actionLoading && <Loader size={16} />}
                                 Confirm Unstake
+                            </button>
+                            <button
+                                type="button"
+                                onClick={onClose}
+                                className="flex-1 px-6 py-3 glass-card hover:bg-white/10 rounded-xl font-bold transition-all"
+                            >
+                                Cancel
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        );
+    };
+
+    // Return-Liquid Confirmation Modal — sweeps app liquid to bank, keeps 1 POKT.
+    const ReturnLiquidModal = ({ isOpen, onClose, onConfirm, app, actionLoading }) => {
+        const modalRef = useRef(null);
+        useFocusTrap(modalRef, isOpen);
+
+        useEffect(() => {
+            if (!isOpen) return;
+            const handleKeyDown = (e) => {
+                if (e.key === 'Escape') onClose();
+            };
+            window.addEventListener('keydown', handleKeyDown);
+            return () => window.removeEventListener('keydown', handleKeyDown);
+        }, [isOpen, onClose]);
+
+        if (!isOpen || !app) return null;
+
+        const liquid = app.liquid_balance || 0;
+        const reserve = 1_000_000;
+        const fee = 1;
+        const sweep = Math.max(0, liquid - reserve - fee);
+
+        const handleSubmit = (e) => {
+            e.preventDefault();
+            if (!actionLoading) onConfirm(app.address);
+        };
+
+        return (
+            <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="return-liquid-title">
+                <div ref={modalRef} className="glass-card rounded-2xl p-8 max-w-md w-full border-2 border-cyan-400/40" onClick={(e) => e.stopPropagation()}>
+                    <h2 id="return-liquid-title" className="text-2xl font-black mb-4 text-cyan-400">Return Liquid to Bank</h2>
+                    <div className="mb-4 text-white/80 text-sm space-y-2">
+                        <p>Sweep liquid POKT from this application back to the bank account:</p>
+                        <p className="font-mono text-xs break-all glass-card rounded-lg px-3 py-2">{app.address}</p>
+                    </div>
+                    <div className="gradient-card rounded-xl p-4 mb-6 space-y-2">
+                        <div className="flex justify-between text-sm">
+                            <span className="text-white/60">Current liquid</span>
+                            <span className="font-semibold text-white">{formatStake(liquid)} POKT</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                            <span className="text-white/60">Reserve (kept on app)</span>
+                            <span className="font-semibold text-white">{formatStake(reserve)} POKT</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                            <span className="text-white/60">Tx fee</span>
+                            <span className="font-semibold text-white">{formatStake(fee)} POKT</span>
+                        </div>
+                        <div className="flex justify-between border-t border-white/10 pt-2 mt-2">
+                            <span className="text-white/80 font-semibold">Will send to bank</span>
+                            <span className="text-cyan-400 font-bold text-lg">{formatStake(sweep)} POKT</span>
+                        </div>
+                    </div>
+                    <form onSubmit={handleSubmit}>
+                        <div className="flex gap-3">
+                            <button
+                                type="submit"
+                                disabled={actionLoading || sweep <= 0}
+                                className="flex-1 px-6 py-3 rounded-xl font-bold text-white disabled:opacity-50 flex items-center justify-center gap-2 transition-all"
+                                style={{ background: 'linear-gradient(135deg, #06B6D4 0%, #0891B2 100%)', boxShadow: '0 4px 15px rgba(6, 182, 212, 0.3)' }}
+                            >
+                                {actionLoading && <Loader size={16} />}
+                                Confirm Return
                             </button>
                             <button
                                 type="button"
@@ -1854,6 +1969,7 @@
         const [autoTopUpModal, setAutoTopUpModal] = useState({ isOpen: false, app: null });
         const [delegateModal, setDelegateModal] = useState({ isOpen: false, app: null });
         const [unstakeModal, setUnstakeModal] = useState({ isOpen: false, app: null });
+        const [returnLiquidModal, setReturnLiquidModal] = useState({ isOpen: false, app: null });
         const [gateways, setGateways] = useState({});
         const [autoTopUpConfigs, setAutoTopUpConfigs] = useState({});
         const [autoTopUpEvents, setAutoTopUpEvents] = useState([]);
@@ -2026,6 +2142,25 @@
             setUnstakeModal({ isOpen: true, app });
         }, []);
 
+        const handleReturnLiquid = useCallback((app) => {
+            setReturnLiquidModal({ isOpen: true, app });
+        }, []);
+
+        const handleReturnLiquidConfirm = useCallback(async (address) => {
+            setOperationLoading({ type: 'return-liquid', address });
+            try {
+                const result = await api.returnLiquid(address, currentNetwork);
+                showNotification(`Liquid returned to bank. TX: ${result.tx_hash || 'submitted'}`);
+                setReturnLiquidModal({ isOpen: false, app: null });
+                await Promise.all([loadApplications(currentNetwork), loadBankAccount(currentNetwork)]);
+            } catch (error) {
+                showNotification(`Return liquid failed: ${error.message}`, 'error');
+                setReturnLiquidModal({ isOpen: false, app: null });
+            } finally {
+                setOperationLoading({ type: null, address: null });
+            }
+        }, [currentNetwork, showNotification, loadApplications, loadBankAccount]);
+
         const handleUnstakeConfirm = useCallback(async (address) => {
             setOperationLoading({ type: 'unstake', address });
             try {
@@ -2182,6 +2317,7 @@
                                 onFund={handleFund}
                                 onDelegate={handleDelegate}
                                 onUnstake={handleUnstake}
+                                onReturnLiquid={handleReturnLiquid}
                                 onAutoTopUp={handleAutoTopUp}
                                 thresholds={thresholds}
                                 sortField={sortField}
@@ -2247,6 +2383,14 @@
                     onConfirm={handleUnstakeConfirm}
                     app={unstakeModal.app}
                     actionLoading={operationLoading.type === 'unstake'}
+                />
+
+                <ReturnLiquidModal
+                    isOpen={returnLiquidModal.isOpen}
+                    onClose={() => setReturnLiquidModal({ isOpen: false, app: null })}
+                    onConfirm={handleReturnLiquidConfirm}
+                    app={returnLiquidModal.app}
+                    actionLoading={operationLoading.type === 'return-liquid'}
                 />
 
                 <NetworkSelectorModal

@@ -204,6 +204,39 @@ func (e *Executor) FundApplication(appAddress, bankAddress, network string, amou
 	return e.RunTxWithSeqRetry(bankAddress, network, args)
 }
 
+// ReturnLiquidToBank sends `amount` uPOKT from an application's liquid
+// balance back to the bank account, signed by the application itself.
+// Used by the /api/applications/{addr}/return-liquid endpoint to sweep
+// unused liquid POKT off an app while leaving a small reserve for
+// future tx fees. Caller computes amount; this function does not
+// reserve anything on its own.
+func (e *Executor) ReturnLiquidToBank(appAddress, bankAddress, network string, amount int64, rpcEndpoint string) (*models.TransactionResponse, error) {
+	amountStr := fmt.Sprintf("%dupokt", amount)
+
+	e.Logger.Info("returning liquid to bank",
+		"from_app", appAddress, "to_bank", bankAddress, "amount", amountStr)
+
+	args := []string{
+		"tx", "bank", "send",
+		appAddress,
+		bankAddress,
+		amountStr,
+		"--node", rpcEndpoint,
+		"--chain-id", network,
+		"--yes",
+		"--gas=auto",
+		"--fees=1upokt",
+		"--output", "json",
+	}
+
+	if e.Config.Config.KeyringBackend != "" {
+		args = append(args, "--keyring-backend", e.Config.Config.KeyringBackend)
+	}
+
+	e.Logger.Debug("return-liquid command", "args", args)
+	return e.RunTxWithSeqRetry(appAddress, network, args)
+}
+
 // FundApplicationWithSequence is FundApplication with explicit
 // --account-number + --sequence flags, used by the auto top-up worker so
 // multiple bank-signed fund txs in the same cycle don't race against the

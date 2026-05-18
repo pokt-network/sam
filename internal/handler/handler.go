@@ -259,6 +259,76 @@ func (s *Server) handleUnstake(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, result)
 }
 
+// returnLiquidFeeReserve is the uPOKT amount left untouched on the app
+// after a return-liquid sweep so the app can still pay future tx fees.
+// 1 POKT covers many --fees=1upokt transactions.
+const returnLiquidFeeReserve int64 = 1_000_000
+
+// returnLiquidTxFee is the fee for the return-liquid tx itself (matches
+// the --fees=1upokt baked into the pocketd args).
+const returnLiquidTxFee int64 = 1
+
+func (s *Server) handleReturnLiquid(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	address := vars["address"]
+
+	if err := validate.Address(address); err != nil {
+		respondWithError(w, http.StatusBadRequest, "invalid address format")
+		return
+	}
+
+	network := r.URL.Query().Get("network")
+	if network == "" {
+		network = "pocket"
+	}
+
+	networkConfig, ok := s.Config.Config.Networks[network]
+	if !ok {
+		respondWithError(w, http.StatusBadRequest, "invalid network")
+		return
+	}
+	if networkConfig.Bank == "" {
+		respondWithError(w, http.StatusBadRequest, "no bank address configured for this network")
+		return
+	}
+
+	app, err := s.Client.QueryApplication(address, networkConfig.APIEndpoint, network)
+	if err != nil {
+		s.Logger.Error("return-liquid: failed to query app", "address", address, "error", err)
+		respondWithError(w, http.StatusInternalServerError, "failed to query application")
+		return
+	}
+
+	sweepAmount := app.LiquidBalance - returnLiquidFeeReserve - returnLiquidTxFee
+	if sweepAmount <= 0 {
+		respondWithError(w, http.StatusBadRequest,
+			"nothing to return: liquid balance is below the 1 POKT reserve + fee")
+		return
+	}
+
+	s.Logger.Info("returning liquid",
+		"address", address, "network", network,
+		"liquid_upokt", app.LiquidBalance,
+		"sweep_upokt", sweepAmount,
+		"reserve_upokt", returnLiquidFeeReserve,
+	)
+
+	result, err := s.Executor.ReturnLiquidToBank(address, networkConfig.Bank, network, sweepAmount, networkConfig.RPCEndpoint)
+	if err != nil {
+		s.Logger.Error("return-liquid error", "error", err)
+		respondWithError(w, http.StatusInternalServerError, "return-liquid operation failed")
+		return
+	}
+
+	s.AppCache.Delete(network)
+	s.BankCache.Delete(network)
+
+	s.Logger.Info("return-liquid submitted",
+		"address", address, "network", network,
+		"tx_hash", result.TxHash, "amount_upokt", sweepAmount)
+	respondWithJSON(w, http.StatusOK, result)
+}
+
 func (s *Server) handleFund(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	address := vars["address"]

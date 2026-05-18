@@ -32,6 +32,7 @@ func (s *Server) SetupRoutes(r *mux.Router) {
 	write.HandleFunc("/applications/{address}/upstake", s.handleUpstake).Methods("POST")
 	write.HandleFunc("/applications/{address}/unstake", s.handleUnstake).Methods("POST")
 	write.HandleFunc("/applications/{address}/fund", s.handleFund).Methods("POST")
+	write.HandleFunc("/applications/{address}/return-liquid", s.handleReturnLiquid).Methods("POST")
 	write.HandleFunc("/applications/{address}/delegate", s.handleDelegate).Methods("POST")
 	write.HandleFunc("/applications/{address}/autotopup", s.handleSetAutoTopUp).Methods("PUT")
 	write.HandleFunc("/applications/{address}/autotopup", s.handleDeleteAutoTopUp).Methods("DELETE")

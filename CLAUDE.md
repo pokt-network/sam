@@ -60,6 +60,7 @@ Run with custom port: `PORT=8080 ./sam`
 | POST | `/api/applications/{address}/upstake` | Increase app stake |
 | POST | `/api/applications/{address}/unstake` | Begin unbonding (stake returns to liquid after ~1–2h on mainnet) |
 | POST | `/api/applications/{address}/fund` | Transfer POKT to app |
+| POST | `/api/applications/{address}/return-liquid` | Sweep app's liquid POKT back to the bank (keeps a 1 POKT reserve) |
 | PUT | `/api/applications/{address}/autotopup?network=` | Set auto top-up config |
 | DELETE | `/api/applications/{address}/autotopup?network=` | Remove auto top-up config |
 | GET | `/api/autotopup?network=` | List auto top-up configs |

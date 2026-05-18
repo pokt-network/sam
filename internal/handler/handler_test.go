@@ -75,6 +75,34 @@ func setupRouter(srv *Server) *mux.Router {
 	return r
 }
 
+func TestHandleReturnLiquid_InvalidAddress(t *testing.T) {
+	srv := newTestServer(t)
+	router := setupRouter(srv)
+
+	req := httptest.NewRequest("POST", "/api/applications/invalid/return-liquid?network=pocket", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
+func TestHandleReturnLiquid_InvalidNetwork(t *testing.T) {
+	srv := newTestServer(t)
+	router := setupRouter(srv)
+
+	req := httptest.NewRequest("POST", "/api/applications/pokt1aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/return-liquid?network=bogus", nil)
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want %d", w.Code, http.StatusBadRequest)
+	}
+}
+
 func TestHandleUnstake_InvalidAddress(t *testing.T) {
 	srv := newTestServer(t)
 	router := setupRouter(srv)
