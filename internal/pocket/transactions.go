@@ -66,7 +66,7 @@ func (e *Executor) StakeNewApplication(appAddress, serviceID, network string, am
 	}
 
 	e.Logger.Debug("stake new app command", "args", args)
-	return e.RunTx(args...)
+	return e.RunTxWithSeqRetry(appAddress, network, args)
 }
 
 // UpstakeApplication increases an application's stake by the given amount (in uPOKT).
@@ -120,7 +120,7 @@ func (e *Executor) UpstakeApplication(appAddress, network string, amount int64, 
 	}
 
 	e.Logger.Debug("upstake command", "args", args)
-	return e.RunTx(args...)
+	return e.RunTxWithSeqRetry(appAddress, network, args)
 }
 
 // UnstakeApplication begins the unbonding process for an application. After
@@ -146,7 +146,7 @@ func (e *Executor) UnstakeApplication(appAddress, network, rpcEndpoint string) (
 	}
 
 	e.Logger.Debug("unstake command", "args", args)
-	return e.RunTx(args...)
+	return e.RunTxWithSeqRetry(appAddress, network, args)
 }
 
 // DelegateToGateway delegates an application to a gateway.
@@ -170,7 +170,7 @@ func (e *Executor) DelegateToGateway(appAddress, gatewayAddress, network, rpcEnd
 	}
 
 	e.Logger.Debug("delegate command", "args", args)
-	return e.RunTx(args...)
+	return e.RunTxWithSeqRetry(appAddress, network, args)
 }
 
 // FundApplication sends POKT from the bank to an application address.
@@ -201,7 +201,7 @@ func (e *Executor) FundApplication(appAddress, bankAddress, network string, amou
 	}
 
 	e.Logger.Debug("fund command", "args", args)
-	return e.RunTx(args...)
+	return e.RunTxWithSeqRetry(bankAddress, network, args)
 }
 
 // FundApplicationWithSequence is FundApplication with explicit
@@ -210,10 +210,10 @@ func (e *Executor) FundApplication(appAddress, bankAddress, network string, amou
 // chain's account sequence.
 //
 // On a "account sequence mismatch, expected N, got M" failure, this
-// function retries once with N parsed from the error message. The retry
-// covers the case where an external tx from the bank (e.g. an admin
-// running pocketd in a shell) desyncs the worker's locally-incremented
-// sequence.
+// function retries once with N. usedSeq in the return reflects the
+// sequence that was actually broadcast (passed-in `sequence` if no
+// retry, or the parsed `expected` if the retry kicked in), so the
+// worker can resync its local counter with usedSeq+1.
 func (e *Executor) FundApplicationWithSequence(
 	appAddress, bankAddress, network string, amount int64, rpcEndpoint string,
 	accountNumber, sequence uint64,
@@ -250,9 +250,6 @@ func (e *Executor) FundApplicationWithSequence(
 	e.Logger.Debug("fund command (sequenced)", "args", args)
 	resp, err := e.RunTx(args...)
 
-	// Retry once on sequence mismatch. The error can surface either as a
-	// Go-level error (pocketd CLI exits non-zero) or in resp.Message
-	// (pocketd returns JSON with a non-zero code).
 	errStr := ""
 	if err != nil {
 		errStr = err.Error()

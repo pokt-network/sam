@@ -1,6 +1,49 @@
 package pocket
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
+
+func TestSetOrAppendFlag(t *testing.T) {
+	cases := []struct {
+		name  string
+		args  []string
+		flag  string
+		value string
+		want  []string
+	}{
+		{
+			name:  "append when absent",
+			args:  []string{"tx", "bank", "send", "--node", "rpc"},
+			flag:  "--sequence",
+			value: "5",
+			want:  []string{"tx", "bank", "send", "--node", "rpc", "--sequence", "5"},
+		},
+		{
+			name:  "replace when present",
+			args:  []string{"tx", "bank", "send", "--sequence", "3", "--node", "rpc"},
+			flag:  "--sequence",
+			value: "5",
+			want:  []string{"tx", "bank", "send", "--sequence", "5", "--node", "rpc"},
+		},
+		{
+			name:  "replace last when duplicate",
+			args:  []string{"--sequence", "1", "--node", "rpc", "--sequence", "2"},
+			flag:  "--sequence",
+			value: "9",
+			want:  []string{"--sequence", "9", "--node", "rpc", "--sequence", "9"},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := setOrAppendFlag(c.args, c.flag, c.value)
+			if !reflect.DeepEqual(got, c.want) {
+				t.Errorf("\n got: %v\nwant: %v", got, c.want)
+			}
+		})
+	}
+}
 
 func TestParseExpectedSequence(t *testing.T) {
 	cases := []struct {
