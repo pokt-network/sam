@@ -704,6 +704,8 @@
         const totalStake = apps.reduce((sum, app) => sum + app.stake, 0);
         const totalLiquid = apps.reduce((sum, app) => sum + app.liquid_balance, 0);
         const lowStakeCount = apps.filter(app => {
+            // Unstaked / unbonding apps aren't "low stake" — skip them
+            if (app.status === 'NOT_FOUND' || app.status === 'UNBONDING') return false;
             const s = getStakeStatus(app.stake, thresholds);
             return s === 'danger' || s === 'warning';
         }).length;
@@ -979,7 +981,7 @@
                         </span>
                     ) : isNotFound ? (
                         <span className="px-3 py-1 rounded-full text-xs font-bold text-white bg-white/30" title="Not on chain — either never staked or already unbonded. Tracking row kept; re-stake to use again.">
-                            NOT STAKED
+                            UNSTAKED
                         </span>
                     ) : (
                         <span className={`px-3 py-1 rounded-full text-xs font-bold text-white ${
@@ -1098,7 +1100,7 @@
                     {isUnbonding ? (
                         <span className="px-2 py-0.5 rounded-full text-[10px] font-bold text-white flex-shrink-0 ml-2 bg-amber-500/80">UNBONDING</span>
                     ) : isNotFound ? (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold text-white flex-shrink-0 ml-2 bg-white/30">NOT STAKED</span>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold text-white flex-shrink-0 ml-2 bg-white/30">UNSTAKED</span>
                     ) : (
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold text-white flex-shrink-0 ml-2 ${
                             status === 'danger' ? 'status-danger' : status === 'warning' ? 'status-warning' : 'status-good'
