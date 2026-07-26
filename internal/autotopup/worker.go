@@ -303,10 +303,13 @@ func (w *Worker) processApp(ctx context.Context, network, address string, cfg mo
 	event.PreviousStake = app.Stake
 	event.ServiceID = app.ServiceID
 
-	// Skip apps that are not actively staked. UNBONDING apps cannot be
-	// upstaked (protocol rejects), and NOT_FOUND apps have nothing to top up
-	// (either never staked or already finished unbonding — config tracking
-	// row is kept, but a fresh stake-application tx is required to restart).
+	// Skip apps that are not actively staked. UNBONDING apps *could* be
+	// upstaked — the protocol cancels unbonding on any stake increase — but
+	// unstaking is a deliberate operator action, so automation must not undo
+	// it silently (cancel manually from the UI instead). NOT_FOUND apps have
+	// nothing to top up (either never staked or already finished unbonding —
+	// config tracking row is kept, but a fresh stake-application tx is
+	// required to restart).
 	if app.Status != models.AppStatusStaked {
 		w.Logger.Debug("auto-top-up: app not in STAKED status, skipping",
 			"address", address, "status", app.Status)

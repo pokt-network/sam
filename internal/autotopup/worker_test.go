@@ -417,8 +417,9 @@ func TestProcessApp_SkipsWhenBankInsufficient(t *testing.T) {
 }
 
 func TestProcessApp_SkipsUnbondingApp(t *testing.T) {
-	// App is mid-unbond. Worker must not attempt fund or upstake — protocol
-	// rejects upstake on UNBONDING apps; spamming would just generate errors.
+	// App is mid-unbond. An upstake would cancel the unbonding on-chain, so the
+	// worker must not attempt fund or upstake: undoing a deliberate unstake is
+	// the operator's call, made manually from the UI.
 	client := &mockClient{
 		app: &models.Application{
 			Address:                 testAddr,

@@ -1013,9 +1013,9 @@
                         </button>
                         <button
                             onClick={(e) => { e.stopPropagation(); onUpstake(app); }}
-                            disabled={isUpstaking || !isStaked}
+                            disabled={isUpstaking || isNotFound}
                             className="p-2 glass-card hover:bg-white/10 rounded-lg transition-all disabled:opacity-50"
-                            title={isUnbonding ? 'Cannot upstake while unbonding' : isNotFound ? 'App not on chain — fund it and stake a new application' : 'Upstake'}
+                            title={isUnbonding ? 'Upstake — cancels unbonding and puts the app back in service' : isNotFound ? 'App not on chain — fund it and stake a new application' : 'Upstake'}
                             aria-label={`Upstake ${app.address.slice(0, 10)}`}
                         >
                             {isUpstaking ? <Loader size={16} /> : <TrendingUp size={16} className="text-green-400" />}
@@ -1124,8 +1124,9 @@
                         </button>
                         <button
                             onClick={() => onUpstake(app)}
-                            disabled={isUpstaking || !isStaked}
+                            disabled={isUpstaking || isNotFound}
                             className="p-1.5 glass-card hover:bg-white/10 rounded-lg transition-all disabled:opacity-50"
+                            title={isUnbonding ? 'Upstake — cancels unbonding' : 'Upstake'}
                             aria-label={`Upstake ${app.address.slice(0, 10)}`}
                         >
                             {isUpstaking ? <Loader size={14} /> : <TrendingUp size={14} className="text-green-400" />}
@@ -1462,7 +1463,8 @@
                             <li>Stake of <span className="font-semibold text-white">{formatStake(app.stake)} POKT</span> will be locked during unbonding (~1–2 hours on mainnet).</li>
                             <li>After unbonding, the stake is automatically returned to the application's liquid balance — no claim transaction needed.</li>
                             <li>The on-chain application entry is removed once unbonding completes. The tracking row stays in SAM so you can re-stake from here.</li>
-                            <li>You cannot upstake, delegate, or unstake again during the unbonding period.</li>
+                            <li>You cannot unstake again during the unbonding period.</li>
+                            <li>Changed your mind? Upstake during unbonding cancels it — any stake increase puts the app back in active service.</li>
                         </ul>
                     </div>
                     <form onSubmit={handleSubmit}>
@@ -2120,10 +2122,17 @@
         });
 
         const handleUpstake = useCallback((app) => {
+            // Re-staking an unbonding app cancels the unbonding (protocol clears
+            // unstake_session_end_height), as long as the new stake is higher.
+            // The added amount is escrowed from the app's liquid balance, so it
+            // may need funding first.
+            const isUnbonding = app.status === 'UNBONDING';
             setAmountModal({
                 isOpen: true,
-                title: 'Upstake Application',
-                message: `Upstake ${app.address}?`,
+                title: isUnbonding ? 'Upstake (Cancel Unbonding)' : 'Upstake Application',
+                message: isUnbonding
+                    ? `Upstake ${app.address}? This cancels unbonding and returns the app to active service. The added amount is taken from the app's liquid balance (currently ${formatStake(app.liquid_balance)} POKT) — fund it first if that is not enough.`
+                    : `Upstake ${app.address}?`,
                 action: 'Upstake',
                 app,
                 type: 'upstake',
