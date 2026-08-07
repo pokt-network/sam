@@ -80,24 +80,29 @@ jobs:
       - name: Package archive
         run: |
           ARCHIVE_NAME="sam-${GITHUB_REF_NAME}-${{ matrix.goos }}-${{ matrix.goarch }}"
-          mkdir -p "${ARCHIVE_NAME}"
+          # Stage under build/ so the staging directory never sits next to the
+          # archives in the workspace root — the upload glob would match it too.
+          mkdir -p "build/${ARCHIVE_NAME}" dist
           EXT=""
           if [ "${{ matrix.goos }}" = "windows" ]; then EXT=".exe"; fi
-          cp sam${EXT} "${ARCHIVE_NAME}/"
-          cp -r web/ "${ARCHIVE_NAME}/web/"
-          cp README.md "${ARCHIVE_NAME}/" 2>/dev/null || true
-          cp LICENSE "${ARCHIVE_NAME}/" 2>/dev/null || true
+          cp sam${EXT} "build/${ARCHIVE_NAME}/"
+          cp -r web/ "build/${ARCHIVE_NAME}/web/"
+          cp README.md "build/${ARCHIVE_NAME}/" 2>/dev/null || true
+          cp LICENSE "build/${ARCHIVE_NAME}/" 2>/dev/null || true
           if [ "${{ matrix.goos }}" = "windows" ]; then
-            zip -r "${ARCHIVE_NAME}.zip" "${ARCHIVE_NAME}"
+            (cd build && zip -r "../dist/${ARCHIVE_NAME}.zip" "${ARCHIVE_NAME}")
           else
-            tar -czf "${ARCHIVE_NAME}.tar.gz" "${ARCHIVE_NAME}"
+            tar -czf "dist/${ARCHIVE_NAME}.tar.gz" -C build "${ARCHIVE_NAME}"
           fi
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: binary-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: sam-*.*
+          path: |
+            dist/sam-*.tar.gz
+            dist/sam-*.zip
+          if-no-files-found: error
 
   release:
     needs: build-binaries
@@ -114,14 +119,15 @@ jobs:
 
       - name: Generate checksums
         working-directory: dist
-        run: sha256sum sam-* > checksums.txt
+        run: sha256sum sam-*.tar.gz sam-*.zip > checksums.txt
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           files: |
-            dist/sam-*
+            dist/sam-*.tar.gz
+            dist/sam-*.zip
             dist/checksums.txt
 
   docker:
