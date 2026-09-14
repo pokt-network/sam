@@ -412,6 +412,11 @@
         return `${days}d ago`;
     };
 
+    // Status column sort order; must match the badge each row shows.
+    const STATUS_RANK = { danger: 0, warning: 1, good: 2, UNBONDING: 3, NOT_FOUND: 4 };
+    const getStatusRank = (app, thresholds) =>
+        STATUS_RANK[app.status === 'UNBONDING' || app.status === 'NOT_FOUND' ? app.status : getStakeStatus(app.stake, thresholds)];
+
     const getStakeStatus = (stake, thresholds) => {
         const stakeNum = Number(stake || 0);
         const warnNum = Number(thresholds?.warning_threshold || 0);
@@ -478,8 +483,8 @@
                         bVal = b.stake;
                         break;
                     case 'status':
-                        aVal = getStakeStatus(a.stake, thresholds);
-                        bVal = getStakeStatus(b.stake, thresholds);
+                        aVal = getStatusRank(a, thresholds);
+                        bVal = getStatusRank(b, thresholds);
                         break;
                     default:
                         return 0;
