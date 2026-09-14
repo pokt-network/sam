@@ -11,14 +11,14 @@ const (
 
 // Application represents a staked Pocket Network application.
 type Application struct {
-	Address                 string `json:"address"`
-	ServiceID               string `json:"service_id"`
-	Stake                   int64  `json:"stake"`
-	LiquidBalance           int64  `json:"liquid_balance"`
-	Gateway                 string `json:"gateway"`
-	Network                 string `json:"network"`
-	Status                  string `json:"status"`
-	UnstakeSessionEndHeight int64  `json:"unstake_session_end_height,omitempty"`
+	Address                 string   `json:"address"`
+	ServiceID               string   `json:"service_id"`
+	Stake                   int64    `json:"stake"`
+	LiquidBalance           int64    `json:"liquid_balance"`
+	Gateways                []string `json:"gateways,omitempty"`
+	Network                 string   `json:"network"`
+	Status                  string   `json:"status"`
+	UnstakeSessionEndHeight int64    `json:"unstake_session_end_height,omitempty"`
 }
 
 // BankAccount represents a bank account balance on a network.
@@ -147,16 +147,16 @@ type APIServiceEntry struct {
 // AutoTopUpConfig is the stored per-app auto-top-up configuration (uPOKT).
 type AutoTopUpConfig struct {
 	Enabled          bool  `json:"enabled"`
-	TriggerThreshold int64 `json:"trigger_threshold"` // uPOKT
-	TargetAmount     int64 `json:"target_amount"`     // uPOKT
+	TriggerThreshold int64 `json:"trigger_threshold"`  // uPOKT
+	TargetAmount     int64 `json:"target_amount"`      // uPOKT
 	MinLiquidBalance int64 `json:"min_liquid_balance"` // uPOKT — minimum liquid balance to keep after upstake
 }
 
 // AutoTopUpRequest is the JSON body from the frontend (POKT values).
 type AutoTopUpRequest struct {
 	Enabled          bool    `json:"enabled"`
-	TriggerThreshold float64 `json:"trigger_threshold"` // POKT
-	TargetAmount     float64 `json:"target_amount"`     // POKT
+	TriggerThreshold float64 `json:"trigger_threshold"`  // POKT
+	TargetAmount     float64 `json:"target_amount"`      // POKT
 	MinLiquidBalance float64 `json:"min_liquid_balance"` // POKT — minimum liquid balance to keep after upstake
 }
 

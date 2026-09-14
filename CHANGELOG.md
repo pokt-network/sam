@@ -7,9 +7,11 @@ All notable changes to SAM (Simple AppStakes Manager) are documented in this fil
 ### Added
 
 - **Bulk delegate to gateway** — checkboxes on the desktop app table (plus select-all for visible staked apps) and a bulk action bar that delegates every checked app to one gateway. One tx per app (each app signs its own), run 5 at a time; apps that fail stay checked for a one-click retry.
+- **All delegated gateways shown** — the app API now returns every delegated gateway (`gateways: []`, replacing the single `gateway` field). The Gateway column still shows the first one, plus a `+N` badge whose hover/focus popover lists all of them.
 
 ### Fixed
 
+- **Bulk delegate vs. proxy rate limit** — behind nginx, large batches hit `limit_req` and 28 of 65 requests got 503 without reaching SAM. The bulk loop now retries 503/429 with exponential backoff (1s to 16s, 5 retries); those responses mean no tx was sent, so the retry is safe. Error toasts for non-JSON responses now include the HTTP status.
 - **Status column sort** — sorting by Status now follows the badge shown on each row: DANGER, WARNING, GOOD, then UNBONDING, then UNSTAKED. Before, it ignored unbonding/unstaked state (those rows sorted by stake) and compared the labels alphabetically, which put GOOD before WARNING.
 
 ## [0.1.0] - 2026-08-07

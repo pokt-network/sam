@@ -201,9 +201,7 @@ func (c *Client) QueryApplication(address, apiEndpoint, network string) (*models
 		}
 	}
 
-	if len(apiResp.Application.DelegateeGatewayAddresses) > 0 {
-		app.Gateway = apiResp.Application.DelegateeGatewayAddresses[0]
-	}
+	app.Gateways = apiResp.Application.DelegateeGatewayAddresses
 
 	balance, err := c.QueryBalance(address, apiEndpoint)
 	if err != nil {
