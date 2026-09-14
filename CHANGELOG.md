@@ -4,6 +4,10 @@ All notable changes to SAM (Simple AppStakes Manager) are documented in this fil
 
 ## [Unreleased]
 
+### Added
+
+- **Bulk delegate to gateway** — checkboxes on the desktop app table (plus select-all for visible staked apps) and a bulk action bar that delegates every checked app to one gateway. One tx per app (each app signs its own), run 5 at a time; apps that fail stay checked for a one-click retry.
+
 ## [0.1.0] - 2026-08-07
 
 First tagged release. Cross-platform binaries, GHCR Docker image, and Helm chart are published from this tag.

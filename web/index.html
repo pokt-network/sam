@@ -932,7 +932,7 @@
     };
 
     // Application Row
-    const ApplicationRow = React.memo(({ app, isSelected, onSelect, onUpstake, onFund, onDelegate, onUnstake, onReturnLiquid, onAutoTopUp, thresholds, operationLoading, hasAutoTopUp, autoTopUpConfig }) => {
+    const ApplicationRow = React.memo(({ app, isSelected, onSelect, isChecked, onToggleCheck, onUpstake, onFund, onDelegate, onUnstake, onReturnLiquid, onAutoTopUp, thresholds, operationLoading, hasAutoTopUp, autoTopUpConfig }) => {
         const status = getStakeStatus(app.stake, thresholds);
         const isUpstaking = operationLoading.type === 'upstake' && operationLoading.address === app.address;
         const isFunding = operationLoading.type === 'fund' && operationLoading.address === app.address;
@@ -951,6 +951,16 @@
                     isSelected ? 'bg-white/10' : ''
                 }`}
             >
+                <td className="pl-6 py-4 w-8" onClick={(e) => e.stopPropagation()}>
+                    <input
+                        type="checkbox"
+                        checked={isChecked}
+                        disabled={!isStaked}
+                        onChange={() => onToggleCheck(app.address)}
+                        className="accent-purple-500 cursor-pointer disabled:cursor-not-allowed disabled:opacity-30"
+                        aria-label={`Select ${app.address.slice(0, 10)} for bulk delegate`}
+                    />
+                </td>
                 <td className="px-6 py-4">
                     <div className="flex items-center gap-2">
                         <span className="text-sm font-mono text-white/80">{app.address}</span>
@@ -1170,13 +1180,22 @@
     });
 
     // Applications Table
-    const ApplicationsTable = ({ apps, selectedAddress, onSelect, onUpstake, onFund, onDelegate, onUnstake, onReturnLiquid, onAutoTopUp, thresholds, sortField, sortDirection, onSort, operationLoading, autoTopUpConfigs }) => (
+    const ApplicationsTable = ({ apps, selectedAddress, onSelect, checkedAddresses, allChecked, onToggleCheck, onToggleAll, onUpstake, onFund, onDelegate, onUnstake, onReturnLiquid, onAutoTopUp, thresholds, sortField, sortDirection, onSort, operationLoading, autoTopUpConfigs }) => (
         <div>
             {/* Desktop table */}
             <div className="hidden lg:block glass-card rounded-2xl overflow-x-auto perf-contain">
                 <table className="w-full">
                     <thead className="bg-white/5">
                     <tr>
+                        <th className="pl-6 py-4 w-8">
+                            <input
+                                type="checkbox"
+                                checked={allChecked}
+                                onChange={onToggleAll}
+                                className="accent-purple-500 cursor-pointer"
+                                aria-label="Select all staked applications"
+                            />
+                        </th>
                         <SortableHeader field="address" currentField={sortField} direction={sortDirection} onSort={onSort}>
                             Application Address
                         </SortableHeader>
@@ -1196,7 +1215,7 @@
                     <tbody>
                     {apps.length === 0 ? (
                         <tr>
-                            <td colSpan="6" className="px-6 py-12 text-center text-white/40">
+                            <td colSpan="7" className="px-6 py-12 text-center text-white/40">
                                 No applications found
                             </td>
                         </tr>
@@ -1207,6 +1226,8 @@
                                 app={app}
                                 isSelected={selectedAddress === app.address}
                                 onSelect={onSelect}
+                                isChecked={checkedAddresses.has(app.address)}
+                                onToggleCheck={onToggleCheck}
                                 onUpstake={onUpstake}
                                 onFund={onFund}
                                 onDelegate={onDelegate}
@@ -1335,7 +1356,7 @@
     };
 
     // Delegate to Gateway Modal
-    const DelegateModal = ({ isOpen, onClose, onConfirm, app, gateways, actionLoading }) => {
+    const DelegateModal = ({ isOpen, onClose, onConfirm, addresses, gateways, actionLoading }) => {
         const [selectedGateway, setSelectedGateway] = useState('');
         const modalRef = useRef(null);
 
@@ -1358,18 +1379,23 @@
             return () => window.removeEventListener('keydown', handleKeyDown);
         }, [isOpen, onClose]);
 
-        if (!isOpen || !app) return null;
+        if (!isOpen || !addresses?.length) return null;
+        const isBulk = addresses.length > 1;
 
         const handleSubmit = (e) => {
             e.preventDefault();
-            if (selectedGateway && !actionLoading) onConfirm(app.address, selectedGateway);
+            if (selectedGateway && !actionLoading) onConfirm(addresses, selectedGateway);
         };
 
         return (
             <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4" onClick={onClose} role="dialog" aria-modal="true" aria-labelledby="delegate-modal-title">
                 <div ref={modalRef} className="glass-card rounded-2xl p-8 max-w-md w-full border-2 border-white/20" onClick={(e) => e.stopPropagation()}>
                     <h2 id="delegate-modal-title" className="text-2xl font-black gradient-text mb-4">Delegate to Gateway</h2>
-                    <p className="text-white/80 mb-6">Delegate <span className="font-mono text-xs">{app.address}</span> to a gateway.</p>
+                    <p className="text-white/80 mb-6">
+                        {isBulk
+                            ? <>Delegate <span className="font-bold text-white">{addresses.length} applications</span> to a gateway. One transaction per app.</>
+                            : <>Delegate <span className="font-mono text-xs">{addresses[0]}</span> to a gateway.</>}
+                    </p>
                     <form onSubmit={handleSubmit}>
                         <div className="mb-6">
                             <label className="block text-sm text-white/60 mb-2">Gateway</label>
@@ -1403,7 +1429,7 @@
                                 style={{ background: 'linear-gradient(135deg, #9333EA 0%, #7C3AED 100%)', boxShadow: '0 4px 15px rgba(147, 51, 234, 0.3)' }}
                             >
                                 {actionLoading && <Loader size={16} />}
-                                Confirm Delegate
+                                {isBulk ? `Delegate ${addresses.length} Apps` : 'Confirm Delegate'}
                             </button>
                             <button
                                 type="button"
@@ -1976,7 +2002,8 @@
         const [networkModalOpen, setNetworkModalOpen] = useState(false);
         const [stakeNewAppOpen, setStakeNewAppOpen] = useState(false);
         const [autoTopUpModal, setAutoTopUpModal] = useState({ isOpen: false, app: null });
-        const [delegateModal, setDelegateModal] = useState({ isOpen: false, app: null });
+        const [delegateModal, setDelegateModal] = useState({ isOpen: false, addresses: [] });
+        const [checkedAddresses, setCheckedAddresses] = useState(() => new Set());
         const [unstakeModal, setUnstakeModal] = useState({ isOpen: false, app: null });
         const [returnLiquidModal, setReturnLiquidModal] = useState({ isOpen: false, app: null });
         const [gateways, setGateways] = useState({});
@@ -2106,6 +2133,7 @@
         const handleNetworkSelect = useCallback(async (network) => {
             if (network === currentNetwork) return;
             setCurrentNetwork(network);
+            setCheckedAddresses(new Set());
             await Promise.all([
                 loadApplications(network),
                 loadBankAccount(network),
@@ -2151,7 +2179,7 @@
         }, []);
 
         const handleDelegate = useCallback((app) => {
-            setDelegateModal({ isOpen: true, app });
+            setDelegateModal({ isOpen: true, addresses: [app.address] });
         }, []);
 
         const handleUnstake = useCallback((app) => {
@@ -2192,20 +2220,65 @@
             }
         }, [currentNetwork, showNotification, loadApplications]);
 
-        const handleDelegateConfirm = useCallback(async (address, gatewayAddress) => {
-            setOperationLoading({ type: 'delegate', address });
+        const handleDelegateConfirm = useCallback(async (addresses, gatewayAddress) => {
+            setOperationLoading({ type: 'delegate', address: addresses.length === 1 ? addresses[0] : null });
+            // Each app signs its own tx, so there's no sequence race between them.
+            // ponytail: fixed pool of 5 concurrent pocketd processes; raise if the server has headroom.
+            const results = [];
+            let next = 0;
+            const worker = async () => {
+                while (next < addresses.length) {
+                    const address = addresses[next++];
+                    try {
+                        const result = await api.delegateApplication(address, currentNetwork, gatewayAddress);
+                        results.push({ address, tx: result.tx_hash });
+                    } catch (error) {
+                        results.push({ address, error });
+                    }
+                }
+            };
             try {
-                const result = await api.delegateApplication(address, currentNetwork, gatewayAddress);
-                showNotification(`Delegated to gateway. TX: ${result.tx_hash || 'submitted'}`);
-                setDelegateModal({ isOpen: false, app: null });
+                await Promise.all(Array.from({ length: Math.min(5, addresses.length) }, worker));
+                const failed = results.filter(r => r.error);
+                if (failed.length === 0) {
+                    showNotification(addresses.length === 1
+                        ? `Delegated to gateway. TX: ${results[0].tx || 'submitted'}`
+                        : `Delegated ${addresses.length} apps to gateway.`);
+                } else {
+                    showNotification(addresses.length === 1
+                        ? `Delegate failed: ${failed[0].error.message}`
+                        : `Delegated ${addresses.length - failed.length}/${addresses.length}. First failure ${failed[0].address.slice(0, 10)}…: ${failed[0].error.message}`, 'error');
+                }
+                // Keep failed apps checked so a retry is one click.
+                setCheckedAddresses(prev => {
+                    const nextSet = new Set(prev);
+                    results.forEach(r => { if (!r.error) nextSet.delete(r.address); });
+                    return nextSet;
+                });
+                setDelegateModal({ isOpen: false, addresses: [] });
                 await loadApplications(currentNetwork);
-            } catch (error) {
-                showNotification(`Delegate failed: ${error.message}`, 'error');
-                setDelegateModal({ isOpen: false, app: null });
             } finally {
                 setOperationLoading({ type: null, address: null });
             }
         }, [currentNetwork, showNotification, loadApplications]);
+
+        const stakedVisibleAddresses = useMemo(
+            () => filteredApps.filter(a => a.status !== 'UNBONDING' && a.status !== 'NOT_FOUND').map(a => a.address),
+            [filteredApps]
+        );
+        const allChecked = stakedVisibleAddresses.length > 0 && stakedVisibleAddresses.every(a => checkedAddresses.has(a));
+
+        const handleToggleCheck = useCallback((address) => {
+            setCheckedAddresses(prev => {
+                const nextSet = new Set(prev);
+                if (nextSet.has(address)) nextSet.delete(address); else nextSet.add(address);
+                return nextSet;
+            });
+        }, []);
+
+        const handleToggleAll = useCallback(() => {
+            setCheckedAddresses(allChecked ? new Set() : new Set(stakedVisibleAddresses));
+        }, [allChecked, stakedVisibleAddresses]);
 
         const handleAmountConfirm = useCallback(async (amount) => {
             const { app, type } = amountModal;
@@ -2325,10 +2398,33 @@
                                 onRefresh={loadAutoTopUpEvents}
                             />
                             <SearchBar value={searchTerm} onChange={setSearchTerm} />
+                            {checkedAddresses.size > 0 && (
+                                <div className="glass-card rounded-xl px-4 py-3 mb-4 flex flex-wrap items-center gap-3">
+                                    <span className="text-sm text-white/80"><span className="font-bold text-white">{checkedAddresses.size}</span> selected</span>
+                                    <button
+                                        onClick={() => setDelegateModal({ isOpen: true, addresses: [...checkedAddresses] })}
+                                        disabled={operationLoading.type !== null}
+                                        className="px-4 py-2 rounded-lg font-bold text-white text-sm flex items-center gap-2 disabled:opacity-50 transition-all"
+                                        style={{ background: 'linear-gradient(135deg, #9333EA 0%, #7C3AED 100%)' }}
+                                    >
+                                        <LinkIcon size={14} /> Delegate to Gateway
+                                    </button>
+                                    <button
+                                        onClick={() => setCheckedAddresses(new Set())}
+                                        className="px-4 py-2 glass-card hover:bg-white/10 rounded-lg text-sm transition-all"
+                                    >
+                                        Clear
+                                    </button>
+                                </div>
+                            )}
                             <ApplicationsTable
                                 apps={filteredApps}
                                 selectedAddress={selectedAddress}
                                 onSelect={handleSelectAddress}
+                                checkedAddresses={checkedAddresses}
+                                allChecked={allChecked}
+                                onToggleCheck={handleToggleCheck}
+                                onToggleAll={handleToggleAll}
                                 onUpstake={handleUpstake}
                                 onFund={handleFund}
                                 onDelegate={handleDelegate}
@@ -2386,9 +2482,9 @@
 
                 <DelegateModal
                     isOpen={delegateModal.isOpen}
-                    onClose={() => setDelegateModal({ isOpen: false, app: null })}
+                    onClose={() => setDelegateModal({ isOpen: false, addresses: [] })}
                     onConfirm={handleDelegateConfirm}
-                    app={delegateModal.app}
+                    addresses={delegateModal.addresses}
                     gateways={gateways[currentNetwork] || []}
                     actionLoading={operationLoading.type === 'delegate'}
                 />
