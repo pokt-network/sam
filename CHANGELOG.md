@@ -12,6 +12,7 @@ All notable changes to SAM (Simple AppStakes Manager) are documented in this fil
 ### Fixed
 
 - **Bulk delegate vs. proxy rate limit** — behind nginx, large batches hit `limit_req` and 28 of 65 requests got 503 without reaching SAM. The bulk loop now retries 503/429 with exponential backoff (1s to 16s, 5 retries); those responses mean no tx was sent, so the retry is safe. Error toasts for non-JSON responses now include the HTTP status.
+- **See-through row tooltips** — the AUTO and gateway `+N` popovers used the 3%-white `glass-card` background, so the next row's text showed through. They now use a solid background.
 - **Status column sort** — sorting by Status now follows the badge shown on each row: DANGER, WARNING, GOOD, then UNBONDING, then UNSTAKED. Before, it ignored unbonding/unstaked state (those rows sorted by stake) and compared the labels alphabetically, which put GOOD before WARNING.
 
 ## [0.1.0] - 2026-08-07
